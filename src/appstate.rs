@@ -3,6 +3,7 @@ use crate::{
     filebrowser::BrowserDir,
     gestures,
     image_editing::EditState,
+    settings::InstanceLock,
     scrubber::Scrubber,
     settings::{PersistentSettings, VolatileSettings},
     texture_wrapper::TextureWrapperManager,
@@ -125,6 +126,12 @@ pub struct OculanteState {
     pub last_wheel_at: Option<Instant>,
     /// Throttles the "angle" and "mirrored" toasts.
     pub last_view_msg_at: Option<Instant>,
+    /// Held while this instance is allowed to write the settings files.
+    ///
+    /// Several windows run as separate processes; only the instance that owns
+    /// the lock persists, the others stay read-only so they cannot clobber each
+    /// other's `config.json` (or the window geometry) every five seconds.
+    pub instance_lock: Option<InstanceLock>,
 }
 
 impl OculanteState {
@@ -142,6 +149,11 @@ impl OculanteState {
 
     pub fn send_frame(&self, frame: Frame) {
         let _ = self.texture_channel.0.send(frame);
+    }
+
+    /// Whether this instance may write settings to disk.
+    pub fn may_persist(&self) -> bool {
+        self.instance_lock.is_some()
     }
 
     /// Evaluate the base path for the file browser.
@@ -278,6 +290,7 @@ impl Default for OculanteState {
             pending_nav: 0,
             last_wheel_at: None,
             last_view_msg_at: None,
+            instance_lock: None,
         }
     }
 }

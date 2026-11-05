@@ -14,8 +14,67 @@ use std::{
     collections::{BTreeSet, HashSet, VecDeque},
     fmt::{self, Display, Formatter},
     fs::{create_dir_all, File},
-    path::PathBuf,
+    io::Write,
+    path::{Path, PathBuf},
 };
+
+/// Write `data` to `path` atomically.
+///
+/// A concurrent reader (a second instance) or a crash must never observe a half
+/// written settings file, so the data goes to a temporary file in the same
+/// directory first and is renamed afterwards.
+fn write_atomic(path: &Path, data: &[u8]) -> Result<()> {
+    let tmp = path.with_extension(format!("tmp{}", std::process::id()));
+    {
+        let mut f = File::create(&tmp)?;
+        f.write_all(data)?;
+        f.sync_all()?;
+    }
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+/// Single writer election for the settings files.
+///
+/// Several windows run as separate processes and the app saves every five
+/// seconds; without this lock they would overwrite each other and fight over the
+/// window geometry. Only the lock holder persists, the other instances are
+/// read-only. The kernel releases a `flock` when the process exits, so a crash
+/// never leaves a stale lock behind.
+#[derive(Debug)]
+pub struct InstanceLock {
+    _file: File,
+}
+
+impl InstanceLock {
+    pub fn try_acquire() -> Option<Self> {
+        Self::try_acquire_in(&get_config_dir().ok()?)
+    }
+
+    pub fn try_acquire_in(dir: &Path) -> Option<Self> {
+        if !dir.exists() {
+            _ = create_dir_all(dir);
+        }
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(dir.join("instance.lock"))
+            .ok()?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::io::AsRawFd;
+            // SAFETY: the fd belongs to `file`, which outlives this call.
+            let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+            if rc != 0 {
+                return None;
+            }
+        }
+
+        Some(Self { _file: file })
+    }
+}
 
 fn get_config_dir() -> Result<PathBuf> {
     Ok(dirs::data_local_dir()
@@ -151,8 +210,7 @@ impl PersistentSettings {
             _ = create_dir_all(&config_dir);
         }
         let config_path = config_dir.join("config.json");
-        let f = File::create(&config_path)?;
-        serde_json::to_writer_pretty(f, self)?;
+        write_atomic(&config_path, &serde_json::to_vec_pretty(self)?)?;
         debug!("Saved to {}", config_path.display());
         Ok(())
     }
@@ -212,8 +270,8 @@ impl VolatileSettings {
             _ = create_dir_all(&local_dir);
         }
 
-        let f = File::create(local_dir.join("config_volatile.json"))?;
-        serde_json::to_writer_pretty(f, self)?;
+        let path = local_dir.join("config_volatile.json");
+        write_atomic(&path, &serde_json::to_vec_pretty(self)?)?;
         trace!("Saved volatile settings");
         Ok(())
     }
@@ -369,5 +427,53 @@ impl Display for Limit {
             Self::U64(v) => write!(f, "{v}"),
             Self::U32(v) => write!(f, "{v}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = PathBuf::from("target").join(name);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn only_one_instance_may_persist() {
+        let dir = scratch("test-instance-lock");
+        let first = InstanceLock::try_acquire_in(&dir);
+        assert!(first.is_some(), "the first instance must get the lock");
+        assert!(
+            InstanceLock::try_acquire_in(&dir).is_none(),
+            "a second instance must not become the writer"
+        );
+        drop(first);
+        assert!(
+            InstanceLock::try_acquire_in(&dir).is_some(),
+            "the lock must be released when the owner goes away"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn atomic_write_leaves_no_temp_file() {
+        let dir = scratch("test-atomic-write");
+        let path = dir.join("config.json");
+        write_atomic(&path, b"{\"a\":1}").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{\"a\":1}");
+        write_atomic(&path, b"{\"a\":2}").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{\"a\":2}");
+
+        let leftovers: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n.contains("tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "temp files left behind: {leftovers:?}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -45,8 +45,17 @@ the file on disk.
 | `[` / `]` | Lossless JPEG rotation (unchanged, writes the file) |
 | Delete | Move the file to the trash (unchanged, asks for confirmation) |
 | Shift + Delete | **Removed.** Clearing the image without deleting it is disabled |
+| Ctrl (⌘) + N | Open another window (a separate process, fully independent) |
 
 Notes:
+
+- Windows are independent processes: each has its own image, zoom, rotation and
+  its own **always on top** state, so you can pin some windows and not others.
+  Opening the same app bundle again from the Finder only focuses the running
+  window, use `Ctrl/⌘ + N` (or `open -n Oculante.app`) for a second one.
+- Only the first window writes the settings files. The others read them at
+  startup and show "Settings are read only" — this prevents two processes from
+  overwriting `config.json` every five seconds.
 
 - Rotation and mirroring are temporary: switching to another image resets them,
   and returning to the previous image shows it upright again.

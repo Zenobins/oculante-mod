@@ -24,7 +24,7 @@ use notan::egui::Id;
 use notan::prelude::*;
 use oculante::comparelist::CompareItem;
 use std::io::{stdin, IsTerminal, Read};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -199,6 +199,13 @@ fn init(_app: &mut App, gfx: &mut Graphics, plugins: &mut Plugins) -> OculanteSt
         // current_path: maybe_img_location.cloned(/),
         ..Default::default()
     };
+
+    // Several windows run as separate processes; only one of them may write the
+    // settings files (see `InstanceLock`).
+    state.instance_lock = settings::InstanceLock::try_acquire();
+    if state.instance_lock.is_none() {
+        warn!("Another instance owns the settings; this window will not persist changes");
+    }
 
     state.player = Player::new(
         state.texture_channel.0.clone(),
@@ -427,9 +434,14 @@ fn process_events(app: &mut App, state: &mut OculanteState, evt: Event) {
                 }
             }
             if key_pressed(app, state, Quit) {
-                _ = state.persistent_settings.save_blocking();
-                _ = state.volatile_settings.save_blocking();
+                if state.may_persist() {
+                    _ = state.persistent_settings.save_blocking();
+                    _ = state.volatile_settings.save_blocking();
+                }
                 app.backend.exit();
+            }
+            if key_pressed(app, state, NewWindow) {
+                spawn_new_instance(state);
             }
             #[cfg(feature = "turbo")]
             if key_pressed(app, state, LosslessRotateRight) {
@@ -549,8 +561,10 @@ fn process_events(app: &mut App, state: &mut OculanteState, evt: Event) {
                 ),
                 app.window().size(),
             );
-            _ = state.persistent_settings.save_blocking();
-            _ = state.volatile_settings.save_blocking();
+            if state.may_persist() {
+                _ = state.persistent_settings.save_blocking();
+                _ = state.volatile_settings.save_blocking();
+            }
         }
         Event::MouseWheel { delta_x, delta_y } => {
             trace!("Mouse wheel event: dx {delta_x} dy {delta_y}");
@@ -680,6 +694,9 @@ fn update(app: &mut App, state: &mut OculanteState) {
 
     if state.first_start {
         app.window().set_always_on_top(false);
+        if !state.may_persist() {
+            state.send_message_info("Settings are read only: another window saves them");
+        }
     }
 
     if let Some(p) = &state.current_path {
@@ -700,8 +717,10 @@ fn update(app: &mut App, state: &mut OculanteState) {
             ),
             app.window().size(),
         );
-        _ = state.persistent_settings.save_blocking();
-        _ = state.volatile_settings.save_blocking();
+        if state.may_persist() {
+            _ = state.persistent_settings.save_blocking();
+            _ = state.volatile_settings.save_blocking();
+        }
         trace!("Save {t}");
     }
 
@@ -1444,6 +1463,44 @@ fn drawe(app: &mut App, gfx: &mut Graphics, plugins: &mut Plugins, state: &mut O
     gfx.render(&draw);
     gfx.render(&zoom_image);
     gfx.render(&egui_output);
+}
+
+/// Open another window.
+///
+/// Every window is a separate process: that keeps `always on top`, zoom, the
+/// current image and the edit state completely independent, and it is the only
+/// option without rewriting the whole single-window architecture.
+fn spawn_new_instance(state: &mut OculanteState) {
+    match new_instance_command().and_then(|mut cmd| cmd.spawn()) {
+        Ok(_) => state.send_message_info("Opened a new window"),
+        Err(e) => state.send_message_err(&format!("Could not open a window: {e}")),
+    }
+}
+
+fn new_instance_command() -> std::io::Result<std::process::Command> {
+    let exe = std::env::current_exe()?;
+    match bundle_root(&exe) {
+        // Inside a bundle let LaunchServices start a fresh copy: it gets its own
+        // Dock entry, menu bar and Apple Event handling.
+        Some(bundle) => {
+            let mut cmd = std::process::Command::new("/usr/bin/open");
+            cmd.arg("-n").arg(bundle);
+            Ok(cmd)
+        }
+        // Plain binary: `-c` skips the macOS single instance dance in `mac.rs`.
+        None => {
+            let mut cmd = std::process::Command::new(exe);
+            cmd.arg("-c");
+            Ok(cmd)
+        }
+    }
+}
+
+/// The `.app` directory an executable lives in, if any.
+fn bundle_root(exe: &Path) -> Option<PathBuf> {
+    exe.ancestors()
+        .find(|p| p.extension().map(|e| e == "app").unwrap_or(false))
+        .map(Path::to_path_buf)
 }
 
 // Keep the image inside the window.

@@ -5768,6 +5768,7 @@ dependencies = [
  "lexical-sort",
  "libavif-image",
  "libblur",
+ "libc",
  "libheif-rs",
  "log",
  "lutgen",

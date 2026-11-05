@@ -21,19 +21,20 @@
 |---|---|---|---|
 | `src/gestures.rs` | **新增** | ~800 行（含 30 单测） | 滚轮/手势/视图变换的纯逻辑，无 GUI 依赖 |
 | `src/lib.rs` | 修改 | +1 行 | 注册 `pub mod gestures;` |
-| `src/appstate.rs` | 修改 | +100 行 | 新增视图与手势状态字段 + 几何助手方法 |
+| `src/appstate.rs` | 修改 | +110 行 | 视图/手势状态字段、几何助手、`instance_lock` 与 `may_persist()` |
 | `src/utils.rs` | 修改 | +40 行 | `zoom_at` / `toggle_always_on_top` / `reset_view_transform` |
 | `src/main.rs` | 修改 | 约 250 行（替换为主） | 事件循环、绘制段、双击、边界限制、导航节流 |
 | `src/texture_wrapper.rs` | 修改 | ~30 行 | `draw_textures` 改为接收完整变换矩阵 |
-| `src/shortcuts.rs` | 修改 | -1 行 | 移除 `ClearImage` 的默认键 |
+| `src/shortcuts.rs` | 修改 | +2/-1 行 | 移除 `ClearImage` 默认键；新增 `NewWindow`（⌘/Ctrl+N） |
 | `src/ui/top_bar.rs` | 修改 | -14 行 | 移除 Clear Image 按钮；菜单 1:1 锚点；置顶走 helper |
 | `src/ui/settings_ui.rs` | 修改 | +8 行 | 过滤 ClearImage 键位行；新增滚轮灵敏度滑杆 |
-| `src/settings.rs` | 修改 | +4 行 | 新设置项 `wheel_nav_sensitivity` |
+| `src/settings.rs` | 修改 | +95 行 | 新设置项；`InstanceLock`（多实例写锁）；`write_atomic` 原子写 |
 | `README.md` / `CHANGELOG.md` | 修改 | +45 行 | 用户可见的映射表与变更记录 |
 | `packaging/macos/Info.plist` | **新增** | 50 行 | .app 的 plist 模板 |
 | `scripts/make_macos_app.sh` | **新增** | 80 行 | 一键出 .app / .zip |
 | `docs/*` | **新增** | 4 个文件 | 规格、台账、本变更日志、方法论 |
 | `.gitignore` | 修改 | +4 行 | 忽略 `input-remap.patch`、`dist/`、`target/` |
+| `Cargo.toml` | 修改 | +4 行 | unix 平台新增 `libc`（实例锁用） |
 
 ---
 
@@ -200,6 +201,36 @@ M = Mirror(pivot) * R(pivot) * T(offset) * S(scale)
 
 **保留**：`InputEvent::ClearImage` 枚举变体（否则旧 `settings.json` 反序列化会整体失败）、`utils::clear_image()`（`delete_file` 内部仍需用它清视图）。
 `Delete` 仍是 `trash::delete` + 确认弹窗，未改动。
+
+---
+
+### M11 多窗口（多实例）+ 每窗口独立的 Always on top
+
+**需求**：同时开多个窗口看不同的图，且置顶状态按窗口独立（有的置顶、有的不置顶）。
+
+**分析结论**：
+
+- 上游（以及 notan）是**单窗口架构**：`notan::App` 只持有一个 window，同进程多窗口需要重写整个架构。**多进程**是唯一现实路径，而且天然满足"每窗口独立置顶"（每个进程操作自己的 NSWindow）。
+- "无法多开"的真正原因不在 Oculante 本身：**Finder 双击一个已在运行的 .app 只会激活它，不会启动第二个实例**（LaunchServices 行为）。`open -n` 可以强制新实例，普通用户不会这么做。
+- macOS 上还有 `src/mac.rs` 的 chainload 舞蹈：无参数启动时先跑一个 fruitbasket 的 NSApplication 收 `openFile:`，再把自己以 `-c` 重新拉起并退出。这条路径**不阻止**多实例，但让"新开一个空窗口"没有入口。
+
+**实现**：
+
+| 位置 | 改动 |
+|---|---|
+| `shortcuts.rs` | 新增 `InputEvent::NewWindow`，默认 `LControl+N`（macOS 自动映射为 ⌘N） |
+| `main.rs` | `spawn_new_instance()`：在 `.app` 内用 `/usr/bin/open -n <bundle>`（新实例有自己的 Dock 项与 Apple Event 处理）；裸二进制则 spawn 自己并传 `-c` 跳过 chainload |
+| 全部 `save_blocking()` 调用点 | 加 `state.may_persist()` 门控（快捷键退出 / `Event::Exit` / 每 5 秒自动保存） |
+| `settings.rs` | 新增 `InstanceLock`（`flock(LOCK_EX\|LOCK_NB)`，进程退出由内核自动释放，不会留死锁）；`write_atomic()` 用"临时文件 + rename"替换 `File::create` |
+| `appstate.rs` | 新增 `instance_lock: Option<InstanceLock>` 与 `may_persist()` |
+| `Cargo.toml` | unix 平台新增 `libc`（已在校验锁里，无新下载） |
+
+**为什么必须动设置持久化**：两个实例每 5 秒都会写 `config.json` / `config_volatile.json`。
+(1) 会互相覆盖窗口几何、设置；
+(2) 原来的 `File::create + to_writer_pretty` **不是原子写**，另一个进程可能读到半截 JSON → 设置直接丢失。
+现在的规则：**第一个窗口持有写锁并持久化，其余窗口只读**（启动时提示 "Settings are read only"）。次级窗口内的设置改动不会落盘——这是有意的取舍，换取不会互相覆盖。
+
+**已知取舍**：主窗口关闭后，其余窗口不会接管写权限（重启后自然恢复）。
 
 ---
 

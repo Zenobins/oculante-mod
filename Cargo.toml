@@ -153,6 +153,10 @@ notan_glsl-to-spirv = ["notan/glsl-to-spirv"]
 [target.'cfg(target_os = "macos")'.dependencies]
 fruitbasket = "0.10.0"
 
+# Single-writer election for the settings files when several instances run.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [target.'cfg(windows)'.build-dependencies]
 # this currently causes a link error LNK1356, check in the future if the problem was solved
 windres = "0.2"

@@ -187,6 +187,58 @@ AppKit NSEvent
 
 ---
 
+## 6.5 多实例（多窗口）架构
+
+### 为什么是多进程
+
+`notan::App` 与 `OculanteState` 都是**单窗口**模型（一个 `App` 一个 window，绘制/输入/egui 全挂在上面）。
+要在同进程开第二个窗口，需要把 `state`、渲染目标、输入路由全部改成多实例，等于重写。
+多进程方案的额外好处：**每个窗口的 always-on-top、缩放、当前图片、编辑栈天然隔离**，不需要任何同步代码。
+
+### macOS 上的三个事实
+
+1. **Finder 双击已运行的 .app 只会激活**（LaunchServices），不产生第二个进程。`open -n` 才强制新实例。
+2. **直接 spawn `.app` 内的二进制**也能跑，但它不是通过 LaunchServices 启动的，Dock/菜单/Apple Event 行为不如 `open -n` 正规 → 所以在 bundle 内优先用 `open -n`。
+3. **`src/mac.rs` 的 chainload**：无参数启动会先起一个 fruitbasket 的 NSApplication 等 `openFile:`，再把自己以 `-c` 拉起。
+   因此"spawn 自己"时必须带 `-c`，否则新进程会再次进入等待循环。
+
+```rust
+fn new_instance_command() -> io::Result<Command> {
+    let exe = std::env::current_exe()?;
+    match bundle_root(&exe) {                 // 向上找 .app 目录
+        Some(bundle) => { let mut c = Command::new("/usr/bin/open"); c.arg("-n").arg(bundle); Ok(c) }
+        None => { let mut c = Command::new(exe); c.arg("-c"); Ok(c) }
+    }
+}
+```
+
+### 共享状态：设置文件是唯一的冲突点
+
+其它资源都是进程私有（解码缓存、缩略图、编辑栈）；唯一共享的是 `~/Library/Application Support/oculante/` 下的两个 JSON。
+
+| 问题 | 后果 | 解法 |
+|---|---|---|
+| 两个进程每 5 秒都写 `config.json` / `config_volatile.json` | 窗口几何、设置互相覆盖 | `flock(LOCK_EX\|LOCK_NB)` 选主：只有锁持有者写 |
+| `File::create` + `to_writer_pretty` 不是原子写 | 另一个进程/崩溃可能读到半截 JSON，设置丢失 | 写临时文件 → `sync_all` → `rename` |
+| 用 `create_new` 当锁文件 | 进程崩溃会留下死锁，应用再也存不了设置 | **必须用 `flock`**，内核在进程退出时自动释放 |
+
+```rust
+// settings.rs
+pub struct InstanceLock { _file: File }          // 只要它活着，锁就在
+pub fn try_acquire_in(dir: &Path) -> Option<Self>;
+pub fn write_atomic(path: &Path, data: &[u8]) -> Result<()>;
+```
+
+调用侧：`state.may_persist()` 门控所有 `save_blocking()`；次级窗口在首帧提示只读。
+单测：`settings::tests::only_one_instance_may_persist`、`atomic_write_leaves_no_temp_file`。
+
+### 新增窗口的接线
+
+`InputEvent::NewWindow`（默认 ⌘/Ctrl+N）→ `spawn_new_instance()` → 成功给 toast、失败给错误 toast。
+注意 `main.rs` 里已有 `use clap::Command`，spawn 时要用全限定名 `std::process::Command`，否则名字冲突。
+
+---
+
 ## 7. 验证策略
 
 ### 7.1 三层验证，成本从低到高

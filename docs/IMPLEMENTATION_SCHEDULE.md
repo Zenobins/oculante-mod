@@ -25,6 +25,7 @@
 | T12 | `cargo build --release` + 验收清单 | `target/release/oculante` 可运行 | ✅ |
 | T13 | macOS `.app` 打包脚本与产物 | `dist/Oculante.app` 可 `open` 启动 | ✅ |
 | T14 | 升级用变更日志 + 方法论文档 | `docs/MOD_CHANGELOG.md`、`docs/MOD_WORKFLOW.md` | ✅ |
+| T15 | 多实例（多窗口）+ 每窗口独立置顶 + 设置写锁 | 双进程各开一张图；第二实例日志出现只读警告；`settings::tests` 全绿 | ✅ |
 
 状态图例：☐ 未开始 / ▶ 进行中 / ✅ 完成 / ⚠ 阻塞（必须在下方"阻塞记录"写原因）
 
