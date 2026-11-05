@@ -346,6 +346,32 @@ git diff master..HEAD > input-remap.patch
 
 ---
 
+## 12. 收尾与交接（2026-11-06 冻结）
+
+当前状态：需求全部实现并通过用户验收，分支 `feat/input-remap` 停在 14 个附加提交。
+
+| 项 | 值 |
+|---|---|
+| release 二进制 | `target/release/oculante`，30 MB，sha256 前缀 `0a2f6efb` |
+| 应用包 | `dist/Oculante.app`，版本 `0.9.6-mod.20261106-0229` |
+| 分享包 | `dist/Oculante-0.9.6-mod-20261106-0229.zip`（17 MB） |
+| 补丁 | `input-remap.patch`（193 KB，含文档与打包脚本） |
+| 单测 | `cargo test --lib --bin oculante` → 41 + 1 全绿 |
+
+再次接手时的顺序：
+
+1. `docs/README.md`（索引 + 当前状态）
+2. `docs/MOD_CHANGELOG.md §4`（上游升级流程）；若只是小改，读 §2 对应条目
+3. `docs/MOD_WORKFLOW.md §4`（文档驱动流程）与 §8（改完先审查再编译）
+4. 环境：`export PATH=".../tools/cmake-3.31.6-macos-universal/CMake.app/Contents/bin:$PATH"`
+
+**已知边界（不是 bug）**：
+
+- 窗口 = 进程，多窗口时 Dock 里会有多个图标；`⌘N` 用于手动再开一个。
+- 只有一个窗口写设置，其它窗口只读（启动时提示），避免互相覆盖。
+- 旋转/镜像仅显示，切图即复位；编辑模式下禁用。
+- 助手进程（无窗口、不占 Dock）在最后一个窗口关闭后约 3 秒退出。
+
 ## 11. 一页速查
 
 ```bash

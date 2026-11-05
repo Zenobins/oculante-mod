@@ -26,6 +26,8 @@
 | T13 | macOS `.app` 打包脚本与产物 | `dist/Oculante.app` 可 `open` 启动 | ✅ |
 | T14 | 升级用变更日志 + 方法论文档 | `docs/MOD_CHANGELOG.md`、`docs/MOD_WORKFLOW.md` | ✅ |
 | T15 | 多实例（多窗口）+ 每窗口独立置顶 + 设置写锁 | 双进程各开一张图；第二实例日志出现只读警告；`settings::tests` 全绿 | ✅ |
+| T16 | macOS 打开事件（运行中打开第二张图 / 再次双击 app） | 运行中开新图不再报错；再次双击 app 出新窗口 | ✅ |
+| T17 | 多选打开合并（`application:openFiles:` + 250ms 批量） | 一次选 3 张 → 1 个窗口带 3 个路径 | ✅ |
 
 状态图例：☐ 未开始 / ▶ 进行中 / ✅ 完成 / ⚠ 阻塞（必须在下方"阻塞记录"写原因）
 
@@ -164,13 +166,13 @@ cargo build --release
 
 | 项 | 路径 |
 |---|---|
-| release 二进制 | `oculante/target/release/oculante`（约 30 MB） |
-| 补丁 | `oculante/input-remap.patch`（99 KB，含文档） |
-| 分支 | `feat/input-remap`（4 个提交，基于 `master` @ fdc05eb） |
+| release 二进制 | `oculante/target/release/oculante`（约 30 MB，sha256 前缀 `0a2f6efb`） |
+| 补丁 | `oculante/input-remap.patch`（193 KB，含文档与打包脚本） |
+| 分支 | `feat/input-remap`（14 个提交，基于 `master` @ fdc05eb） |
 | 方案规格 | `oculante/docs/INPUT_REMAP_PLAN.md` |
 | 本排程 | `oculante/docs/IMPLEMENTATION_SCHEDULE.md` |
 | 便携 cmake | `应用mod/tools/cmake-3.31.6-macos-universal/`（240 MB，可整目录删除） |
-| macOS 应用 | `oculante/dist/Oculante.app`、`oculante/dist/Oculante-<ver>.zip` |
+| macOS 应用 | `oculante/dist/Oculante.app`、`oculante/dist/Oculante-0.9.6-mod-20261106-0229.zip` |
 | 打包脚本 | `oculante/scripts/make_macos_app.sh` + `oculante/packaging/macos/Info.plist` |
 | 升级变更日志 | `oculante/docs/MOD_CHANGELOG.md` |
 | 方法论 | `oculante/docs/MOD_WORKFLOW.md` |
@@ -181,3 +183,13 @@ cargo build --release
 cd /Users/raymond/WorkBuddy/应用mod/oculante
 ./target/release/oculante tests/moss.jpg
 ```
+
+---
+
+## 5. 验收记录
+
+| 日期 | 验收人 | 结论 |
+|---|---|---|
+| 2026-11-06 | 用户 | **全部通过**：滚轮翻图、Ctrl/⌘+滚轮缩放（锚点跟鼠标）、菜单 1:1 以图像中心、左键双击 1:1↔fit、右键拖拽缩放、右键双击置顶、中键单击镜像、中键拖拽精密旋转、Shift+滚轮 90°、`[`/`]` 无损旋转、Shift+Delete 失效、多窗口独立置顶、运行中打开第二张图、再次双击 .app 开新窗口、多选打开合并 |
+
+验收后状态：**冻结**。后续只在上游更新、或用户提出新需求时改动；改动前先读 `docs/MOD_CHANGELOG.md §4` 的升级流程。

@@ -53,6 +53,9 @@ Notes:
   its own **always on top** state, so you can pin some windows and not others.
   Opening the same app bundle again from the Finder only focuses the running
   window, use `Ctrl/⌘ + N` (or `open -n Oculante.app`) for a second one.
+- A small background helper (no window, no Dock icon) receives "open with" and
+  dock-icon events and spawns the windows; it exits a few seconds after the last
+  window is closed.
 - Only the first window writes the settings files. The others read them at
   startup and show "Settings are read only" — this prevents two processes from
   overwriting `config.json` every five seconds.

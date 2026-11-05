@@ -6,6 +6,7 @@
 > 补丁文件：`input-remap.patch`（`git diff master..HEAD`）
 > 设计规格：`docs/INPUT_REMAP_PLAN.md`｜执行台账：`docs/IMPLEMENTATION_SCHEDULE.md`
 > 方法论：`docs/MOD_WORKFLOW.md`
+> 状态：**已通过用户验收（2026-11-06）**，分支上共 14 个附加提交
 
 ---
 
@@ -23,7 +24,8 @@
 | `src/lib.rs` | 修改 | +1 行 | 注册 `pub mod gestures;` |
 | `src/appstate.rs` | 修改 | +110 行 | 视图/手势状态字段、几何助手、`instance_lock` 与 `may_persist()` |
 | `src/utils.rs` | 修改 | +40 行 | `zoom_at` / `toggle_always_on_top` / `reset_view_transform` |
-| `src/main.rs` | 修改 | 约 250 行（替换为主） | 事件循环、绘制段、双击、边界限制、导航节流 |
+| `src/main.rs` | 修改 | 约 280 行（替换为主） | 事件循环、绘制段、双击、边界限制、导航节流、新窗口 |
+| `src/mac.rs` | 重写 | ~270 行 | macOS 助手：常驻、多窗口、Finder 打开事件、reopen 注入 |
 | `src/texture_wrapper.rs` | 修改 | ~30 行 | `draw_textures` 改为接收完整变换矩阵 |
 | `src/shortcuts.rs` | 修改 | +2/-1 行 | 移除 `ClearImage` 默认键；新增 `NewWindow`（⌘/Ctrl+N） |
 | `src/ui/top_bar.rs` | 修改 | -14 行 | 移除 Clear Image 按钮；菜单 1:1 锚点；置顶走 helper |
@@ -366,3 +368,4 @@ cargo build --release
 | 2026-11-05 | v1 | 首次改造：滚轮翻图 / Ctrl+滚轮缩放 / 右键缩放与置顶 / 双击 1:1 / 中键镜像 / Shift+滚轮与中键旋转 / 禁用 ClearImage |
 | 2026-11-05 | v2 | 修复滚轮灵敏度（阈值 30→10，新增灵敏度设置）——当时仍是"单阈值"模型，未彻底解决 |
 | 2026-11-06 | v3 | **滚轮模型重写**：行/像素分类 + 手势分段 + 单事件限流；**缩放锚点修正**（原始屏幕坐标）；**平移改回纯屏幕位移**；边界改为屏幕空间限制；新增 8 组不变量单测；打包 .app |
+| 2026-11-06 | v4 | 多窗口（多进程 + 设置单写者 + 原子写）；macOS 打开事件修复（openFile/openFiles/reopen）；多选打开合并；打包带构建戳；**通过验收并冻结** |
