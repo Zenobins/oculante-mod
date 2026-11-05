@@ -12,8 +12,10 @@ use notan::math::{vec2, Mat3};
 
 /// One notch of a real mouse wheel as reported by winit (`LineDelta * 50`).
 pub const WHEEL_NOTCH: f32 = 50.0;
-/// A trackpad has to accumulate this much travel before switching images.
-pub const NAV_THRESHOLD: f32 = 30.0;
+/// Accumulated travel that switches one image. One mouse wheel notch is
+/// [`WHEEL_NOTCH`], but smooth scrolling mice and drivers can report much
+/// smaller values, which is why the settings expose a sensitivity on top.
+pub const NAV_THRESHOLD: f32 = 10.0;
 /// Accumulated travel that equals one 90 degree rotation step.
 pub const ROTATE_THRESHOLD: f32 = 50.0;
 /// Zoom speed of the right button drag (scale factor per pixel).
@@ -92,7 +94,16 @@ pub struct WheelState {
 
 impl WheelState {
     /// Modifier precedence is fixed: shift (rotate) > ctrl (zoom) > plain (nav).
-    pub fn resolve(&mut self, dx: f32, dy: f32, mods: Mods) -> Option<WheelAction> {
+    ///
+    /// `nav_threshold` is the accumulated travel that switches one image; see
+    /// [`NAV_THRESHOLD`] and the wheel sensitivity setting.
+    pub fn resolve(
+        &mut self,
+        dx: f32,
+        dy: f32,
+        mods: Mods,
+        nav_threshold: f32,
+    ) -> Option<WheelAction> {
         if mods.shift {
             let travel = dominant_delta(dx, dy) * SHIFT_AXIS_SIGN;
             let steps = self.rotate.steps(travel, ROTATE_THRESHOLD);
@@ -117,7 +128,7 @@ impl WheelState {
         }
 
         // Exactly one image per event: a trackpad flick must not skip a folder.
-        let steps = self.nav.steps(dy, NAV_THRESHOLD);
+        let steps = self.nav.steps(dy, nav_threshold.max(1.0));
         if steps > 0 {
             Some(WheelAction::PrevImage)
         } else if steps < 0 {
@@ -369,24 +380,64 @@ mod tests {
     #[test]
     fn trackpad_has_to_accumulate() {
         let mut acc = Accumulator::default();
-        assert_eq!(acc.steps(10.0, NAV_THRESHOLD), 0);
-        assert_eq!(acc.steps(10.0, NAV_THRESHOLD), 0);
-        assert_eq!(acc.steps(10.0, NAV_THRESHOLD), 1); // 30 reached
-        assert_eq!(acc.steps(10.0, NAV_THRESHOLD), 0);
+        // Three small steps of a slow trackpad gesture, threshold 30.
+        assert_eq!(acc.steps(10.0, 30.0), 0);
+        assert_eq!(acc.steps(10.0, 30.0), 0);
+        assert_eq!(acc.steps(10.0, 30.0), 1);
+        assert_eq!(acc.steps(10.0, 30.0), 0);
+    }
+
+    #[test]
+    fn smooth_scrolling_mouse_switches_after_one_notch() {
+        // Mice with smooth scrolling (and some drivers) report ~10 per notch
+        // instead of the 50 winit uses for a line based wheel.
+        let mut wheel = WheelState::default();
+        assert_eq!(
+            wheel.resolve(0.0, -10.0, mods(false, false), NAV_THRESHOLD),
+            Some(WheelAction::NextImage)
+        );
+        assert_eq!(
+            wheel.resolve(0.0, 10.0, mods(false, false), NAV_THRESHOLD),
+            Some(WheelAction::PrevImage)
+        );
+    }
+
+    #[test]
+    fn tiny_scroll_steps_still_accumulate() {
+        // A very smooth driver sends 2 per event; ten of them must switch once,
+        // not ten times.
+        let mut wheel = WheelState::default();
+        let mut switched = 0;
+        for _ in 0..10 {
+            if wheel.resolve(0.0, -2.0, mods(false, false), NAV_THRESHOLD).is_some() {
+                switched += 1;
+            }
+        }
+        assert_eq!(switched, 2, "10 * 2 with a threshold of 10 switches twice");
+    }
+
+    #[test]
+    fn higher_sensitivity_lowers_the_threshold() {
+        let mut wheel = WheelState::default();
+        // Sensitivity 5 => threshold 2, so a single tiny event switches.
+        assert_eq!(
+            wheel.resolve(0.0, -2.0, mods(false, false), NAV_THRESHOLD / 5.0),
+            Some(WheelAction::NextImage)
+        );
     }
 
     #[test]
     fn opposite_deltas_cancel() {
         let mut acc = Accumulator::default();
-        assert_eq!(acc.steps(40.0, NAV_THRESHOLD), 1);
-        assert_eq!(acc.steps(-50.0, NAV_THRESHOLD), -1);
+        assert_eq!(acc.steps(40.0, 30.0), 1);
+        assert_eq!(acc.steps(-50.0, 30.0), -1);
     }
 
     #[test]
     fn modifier_precedence_shift_wins() {
         let mut wheel = WheelState::default();
         assert_eq!(
-            wheel.resolve(0.0, 50.0, mods(true, true)),
+            wheel.resolve(0.0, 50.0, mods(true, true), NAV_THRESHOLD),
             Some(WheelAction::RotateCw)
         );
     }
@@ -395,11 +446,11 @@ mod tests {
     fn ctrl_wheel_zooms() {
         let mut wheel = WheelState::default();
         assert_eq!(
-            wheel.resolve(0.0, 50.0, mods(true, false)),
+            wheel.resolve(0.0, 50.0, mods(true, false), NAV_THRESHOLD),
             Some(WheelAction::Zoom(1))
         );
         assert_eq!(
-            wheel.resolve(0.0, -50.0, mods(true, false)),
+            wheel.resolve(0.0, -50.0, mods(true, false), NAV_THRESHOLD),
             Some(WheelAction::Zoom(-1))
         );
     }
@@ -408,22 +459,22 @@ mod tests {
     fn plain_wheel_navigates_one_image_per_event() {
         let mut wheel = WheelState::default();
         assert_eq!(
-            wheel.resolve(0.0, 50.0, mods(false, false)),
+            wheel.resolve(0.0, 50.0, mods(false, false), NAV_THRESHOLD),
             Some(WheelAction::PrevImage)
         );
         assert_eq!(
-            wheel.resolve(0.0, -200.0, mods(false, false)),
+            wheel.resolve(0.0, -200.0, mods(false, false), NAV_THRESHOLD),
             Some(WheelAction::NextImage)
         );
         // A huge delta must not skip several images.
-        assert_eq!(wheel.resolve(0.0, -1000.0, mods(false, false)), Some(WheelAction::NextImage));
+        assert_eq!(wheel.resolve(0.0, -1000.0, mods(false, false), NAV_THRESHOLD), Some(WheelAction::NextImage));
     }
 
     #[test]
     fn shift_wheel_rotates_even_when_macos_swaps_the_axis() {
         let mut wheel = WheelState::default();
         assert_eq!(
-            wheel.resolve(-50.0, 0.0, mods(false, true)),
+            wheel.resolve(-50.0, 0.0, mods(false, true), NAV_THRESHOLD),
             Some(WheelAction::RotateCcw)
         );
     }

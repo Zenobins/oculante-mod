@@ -553,7 +553,7 @@ fn process_events(app: &mut App, state: &mut OculanteState, evt: Event) {
             _ = state.volatile_settings.save_blocking();
         }
         Event::MouseWheel { delta_x, delta_y } => {
-            trace!("Mouse wheel event");
+            trace!("Mouse wheel event: dx {delta_x} dy {delta_y}");
             // Touchpads scroll ten times too slow in the UI otherwise. Seen on Linux
             // and on macOS. Windows reports whole lines, which this leaves alone.
             if cfg!(any(target_os = "linux", target_os = "macos")) {
@@ -572,7 +572,9 @@ fn process_events(app: &mut App, state: &mut OculanteState, evt: Event) {
                 alt: app.keyboard.alt(),
             };
 
-            match state.wheel.resolve(delta_x, delta_y, mods) {
+            let nav_threshold =
+                gestures::NAV_THRESHOLD / state.persistent_settings.wheel_nav_sensitivity.clamp(0.2, 10.0);
+            match state.wheel.resolve(delta_x, delta_y, mods, nav_threshold) {
                 Some(WheelAction::PrevImage) => navigate(state, -1),
                 Some(WheelAction::NextImage) => navigate(state, 1),
                 Some(WheelAction::Zoom(notches)) => {
@@ -1445,7 +1447,7 @@ fn limit_offset(app: &mut App, state: &mut OculanteState) {
 }
 
 /// Minimum time between two image switches driven by the wheel.
-const NAV_THROTTLE_MS: u128 = 100;
+const NAV_THROTTLE_MS: u128 = 70;
 
 /// Switch image, throttled so that a trackpad flick does not queue a hundred
 /// decoders. A dropped request is remembered and replayed once the cooldown

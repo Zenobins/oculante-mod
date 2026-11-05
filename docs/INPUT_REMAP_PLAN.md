@@ -68,7 +68,7 @@ pub struct Mods { pub ctrl: bool, pub shift: bool, pub alt: bool }
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum WheelAction { PrevImage, NextImage, Zoom(f32), RotateCw, RotateCcw }
 
-pub const NAV_THRESHOLD: f32 = 30.0;    // 触控板累积阈值（真滚轮一格=50 即生效）
+pub const NAV_THRESHOLD: f32 = 10.0;    // 翻图阈值（真滚轮一格=50；鼠标/驱动差异大，另由设置页灵敏度缩放）
 pub const ROTATE_THRESHOLD: f32 = 50.0; // 与一格滚轮对齐
 pub const DRAG_ZOOM_SPEED: f32 = 0.004; // 右键拖拽灵敏度
 pub const ROT_DRAG_GAIN: f32 = 0.20;    // 中键拖拽：度/像素

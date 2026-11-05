@@ -194,6 +194,10 @@ pub fn settings_ui(app: &mut App, ctx: &Context, state: &mut OculanteState, _gfx
                                         ui.add(egui::DragValue::new(&mut state.persistent_settings.zoom_multiplier).range(0.05..=10.0).speed(0.01));
                                     }, ui);
 
+                                    configuration_item_ui("Wheel image switching sensitivity", "How easily the wheel moves to the next image. Raise it if a single notch does not switch.", |ui| {
+                                        ui.add(egui::DragValue::new(&mut state.persistent_settings.wheel_nav_sensitivity).range(0.2..=10.0).speed(0.05));
+                                    }, ui);
+
                                     configuration_item_ui(
                                         "Auto scale to fit",
                                         "Automatically scale images up to fit the window.",

@@ -32,7 +32,7 @@ the file on disk.
 
 | Input | Action |
 |---|---|
-| Wheel up / down | Previous / next image (one image per notch, trackpad is accumulated) |
+| Wheel up / down | Previous / next image (one image per notch; adjust "Wheel image switching sensitivity" in the settings if it feels sluggish) |
 | Ctrl (or ⌘) + wheel | Zoom, anchored at the cursor |
 | Shift + wheel | Rotate the view by 90° (right / left), display only |
 | Right button drag up / down | Zoom in / out |
