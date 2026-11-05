@@ -26,6 +26,7 @@ use strum_macros::EnumIter;
 
 use crate::appstate::{ImageGeometry, Message, OculanteState};
 use crate::cache::Cache;
+use crate::gestures;
 use crate::image_loader::{open_image, rotate_dynimage};
 use crate::settings::DecoderSettings;
 use crate::shortcuts::{lookup, InputEvent, Shortcuts};
@@ -996,7 +997,9 @@ pub fn clipboard_to_image() -> Result<DynamicImage> {
 
 pub fn set_zoom(scale: f32, from_center: Option<Vector2<f32>>, state: &mut OculanteState) {
     let delta = scale - state.image_geometry.scale;
-    let zoom_point = from_center.unwrap_or(state.cursor);
+    // The anchor must live in the untransformed frame, otherwise a rotated or
+    // mirrored image zooms towards the wrong place.
+    let zoom_point = state.unview_point(from_center.unwrap_or(state.cursor));
     state.image_geometry.offset -= scale_pt(
         state.image_geometry.offset,
         zoom_point,
@@ -1004,6 +1007,31 @@ pub fn set_zoom(scale: f32, from_center: Option<Vector2<f32>>, state: &mut Ocula
         delta,
     );
     state.image_geometry.scale = scale;
+}
+
+/// Zoom by `delta`, keeping the point under `anchor_screen` in place.
+pub fn zoom_at(delta: f32, anchor_screen: Vector2<f32>, state: &mut OculanteState) {
+    let anchor = state.unview_point(anchor_screen);
+    let new_scale = state.image_geometry.scale + delta;
+    if new_scale > gestures::ZOOM_MIN && new_scale < gestures::ZOOM_MAX {
+        state.image_geometry.offset -= scale_pt(
+            state.image_geometry.offset,
+            anchor,
+            state.image_geometry.scale,
+            delta,
+        );
+        state.image_geometry.scale = new_scale;
+    }
+}
+
+pub fn toggle_always_on_top(app: &mut App, state: &mut OculanteState) {
+    state.always_on_top = !state.always_on_top;
+    app.window().set_always_on_top(state.always_on_top);
+}
+
+/// Drop the temporary view transform (rotation + mirror).
+pub fn reset_view_transform(state: &mut OculanteState) {
+    state.view = Default::default();
 }
 
 pub fn get_pixel_checked(img: &DynamicImage, x: u32, y: u32) -> Option<Rgba<u8>> {

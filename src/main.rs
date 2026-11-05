@@ -27,12 +27,13 @@ use std::io::{stdin, IsTerminal, Read};
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[cfg(feature = "file_open")]
 use filebrowser::browse_for_image_path;
 use filebrowser::BrowserDir;
 use oculante::appstate::*;
+use oculante::gestures::{self, Mods, MiddleGesture, WheelAction};
 use oculante::utils::*;
 use oculante::*;
 use shortcuts::key_pressed;
@@ -362,26 +363,27 @@ fn process_events(app: &mut App, state: &mut OculanteState, evt: Event) {
             // pan image with keyboard
             let delta = 40.;
             if key_pressed(app, state, PanRight) {
-                state.image_geometry.offset.x -= delta;
+                state.image_geometry.offset += state.unview_delta(Vector2::new(-delta, 0.0));
                 limit_offset(app, state);
             }
             if key_pressed(app, state, PanUp) {
-                state.image_geometry.offset.y += delta;
+                state.image_geometry.offset += state.unview_delta(Vector2::new(0.0, delta));
                 limit_offset(app, state);
             }
             if key_pressed(app, state, PanLeft) {
-                state.image_geometry.offset.x += delta;
+                state.image_geometry.offset += state.unview_delta(Vector2::new(delta, 0.0));
                 limit_offset(app, state);
             }
             if key_pressed(app, state, PanDown) {
-                state.image_geometry.offset.y -= delta;
+                state.image_geometry.offset += state.unview_delta(Vector2::new(0.0, -delta));
                 limit_offset(app, state);
             }
             if key_pressed(app, state, CompareNext) {
                 compare_next(app, state);
             }
             if key_pressed(app, state, ResetView) {
-                state.reset_image = true
+                state.reset_image = true;
+                reset_view_transform(state);
             }
             if key_pressed(app, state, ZenMode) {
                 toggle_zen_mode(state, app);
@@ -489,8 +491,7 @@ fn process_events(app: &mut App, state: &mut OculanteState, evt: Event) {
                 last_image(state)
             }
             if key_pressed(app, state, AlwaysOnTop) {
-                state.always_on_top = !state.always_on_top;
-                app.window().set_always_on_top(state.always_on_top);
+                toggle_always_on_top(app, state);
             }
             if key_pressed(app, state, InfoMode) {
                 state.persistent_settings.info_enabled = !state.persistent_settings.info_enabled;
@@ -502,46 +503,24 @@ fn process_events(app: &mut App, state: &mut OculanteState, evt: Event) {
                 // TODO: needs confirmation
                 delete_file(state);
             }
-            if key_pressed(app, state, ClearImage) {
-                clear_image(state);
-            }
+            // `ClearImage` is disabled on purpose: the shortcut, the call site and
+            // the toolbar button are gone. The variant stays so old settings files
+            // keep deserializing.
             if key_pressed(app, state, ZoomIn) {
+                let center = Vector2::new(
+                    app.window().width() as f32 / 2.,
+                    app.window().height() as f32 / 2.,
+                );
                 let delta = zoomratio(3.5, state.image_geometry.scale);
-                let new_scale = state.image_geometry.scale + delta;
-                // limit scale
-                if new_scale > 0.05 && new_scale < 40. {
-                    // We want to zoom towards the center
-                    let center: Vector2<f32> = nalgebra::Vector2::new(
-                        app.window().width() as f32 / 2.,
-                        app.window().height() as f32 / 2.,
-                    );
-                    state.image_geometry.offset -= scale_pt(
-                        state.image_geometry.offset,
-                        center,
-                        state.image_geometry.scale,
-                        delta,
-                    );
-                    state.image_geometry.scale += delta;
-                }
+                zoom_at(delta, center, state);
             }
             if key_pressed(app, state, ZoomOut) {
+                let center = Vector2::new(
+                    app.window().width() as f32 / 2.,
+                    app.window().height() as f32 / 2.,
+                );
                 let delta = zoomratio(-3.5, state.image_geometry.scale);
-                let new_scale = state.image_geometry.scale + delta;
-                // limit scale
-                if new_scale > 0.05 && new_scale < 40. {
-                    // We want to zoom towards the center
-                    let center: Vector2<f32> = nalgebra::Vector2::new(
-                        app.window().width() as f32 / 2.,
-                        app.window().height() as f32 / 2.,
-                    );
-                    state.image_geometry.offset -= scale_pt(
-                        state.image_geometry.offset,
-                        center,
-                        state.image_geometry.scale,
-                        delta,
-                    );
-                    state.image_geometry.scale += delta;
-                }
+                zoom_at(delta, center, state);
             }
         }
         Event::WindowResize { width, height } => {
@@ -581,38 +560,37 @@ fn process_events(app: &mut App, state: &mut OculanteState, evt: Event) {
                 let (x, y) = precise_scroll_remainder(delta_x, delta_y);
                 state.scroll_remainder += Vector2::new(x, y);
             }
-            if !state.pointer_over_ui {
-                if app.keyboard.ctrl() {
-                    // Change image to next/prev
-                    // - map scroll-down == next, as that's the natural scrolling direction
-                    if delta_y > 0.0 {
-                        prev_image(state)
-                    } else {
-                        next_image(state)
-                    }
-                } else {
+            if state.pointer_over_ui || state.settings_enabled || state.edit_state.painting {
+                return;
+            }
+
+            let mods = Mods {
+                // On macOS the command key is the usual zoom modifier, accept both.
+                ctrl: app.keyboard.ctrl()
+                    || (cfg!(target_os = "macos") && app.keyboard.logo()),
+                shift: app.keyboard.shift(),
+                alt: app.keyboard.alt(),
+            };
+
+            match state.wheel.resolve(delta_x, delta_y, mods) {
+                Some(WheelAction::PrevImage) => navigate(state, -1),
+                Some(WheelAction::NextImage) => navigate(state, 1),
+                Some(WheelAction::Zoom(notches)) => {
                     // A trackpad sends many small steps. The former divisor of 0.1
                     // zoomed about five times too fast on a MacBook.
                     let divisor = if cfg!(target_os = "macos") { 0.5 } else { 10. };
-                    // Normal scaling
+                    let raw = gestures::WHEEL_NOTCH * notches as f32 * divisor;
                     let delta = zoomratio(
-                        ((delta_y / divisor) * state.persistent_settings.zoom_multiplier)
+                        ((raw / divisor) * state.persistent_settings.zoom_multiplier)
                             .clamp(-5.0, 5.0),
                         state.image_geometry.scale,
                     );
-                    trace!("Delta {delta}, raw {delta_y}");
-                    let new_scale = state.image_geometry.scale + delta;
-                    // limit scale
-                    if new_scale > 0.01 && new_scale < 40. {
-                        state.image_geometry.offset -= scale_pt(
-                            state.image_geometry.offset,
-                            state.cursor,
-                            state.image_geometry.scale,
-                            delta,
-                        );
-                        state.image_geometry.scale += delta;
-                    }
+                    trace!("Zoom delta {delta}");
+                    zoom_at(delta, state.cursor, state);
                 }
+                Some(WheelAction::RotateCw) => rotate_view(app, state, 1),
+                Some(WheelAction::RotateCcw) => rotate_view(app, state, -1),
+                None => {}
             }
         }
 
@@ -633,19 +611,42 @@ fn process_events(app: &mut App, state: &mut OculanteState, evt: Event) {
                 }
             }
         }
-        Event::MouseDown { button, .. } => match button {
+        Event::MouseDown { button, x, y } => match button {
             MouseButton::Left => {
                 if !state.mouse_grab {
                     state.drag_enabled = true;
                 }
             }
+            MouseButton::Right => {
+                if !state.pointer_over_ui && !state.settings_enabled {
+                    state.zoom_drag = true;
+                    state.zoom_drag_moved = false;
+                }
+            }
             MouseButton::Middle => {
-                state.drag_enabled = true;
+                // Never pan with the middle button any more: a click mirrors,
+                // a drag rotates (see `update`).
+                if !state.pointer_over_ui
+                    && !state.settings_enabled
+                    && !state.persistent_settings.edit_enabled
+                    && !state.edit_state.painting
+                {
+                    state.middle = MiddleGesture::press((x as f32, y as f32));
+                } else {
+                    state.middle = MiddleGesture::Idle;
+                }
             }
             _ => {}
         },
         Event::MouseUp { button, .. } => match button {
-            MouseButton::Left | MouseButton::Middle => state.drag_enabled = false,
+            MouseButton::Left => state.drag_enabled = false,
+            MouseButton::Right => state.zoom_drag = false,
+            MouseButton::Middle => {
+                if state.middle.is_click() {
+                    toggle_mirror(state);
+                }
+                state.middle = MiddleGesture::Idle;
+            }
             _ => {}
         },
         _ => {
@@ -690,9 +691,79 @@ fn update(app: &mut App, state: &mut OculanteState) {
 
     state.mouse_delta = Vector2::new(mouse_pos.0, mouse_pos.1) - state.cursor;
     state.cursor = mouse_pos.size_vec();
-    if state.drag_enabled && !state.mouse_grab || app.mouse.is_down(MouseButton::Middle) {
-        state.image_geometry.offset += state.mouse_delta;
+
+    // The temporary view (rotation + mirror) belongs to one image only. This is
+    // the single choke point: every navigation path changes `current_path`.
+    if state.view_path != state.current_path {
+        state.view = Default::default();
+        state.middle = MiddleGesture::Idle;
+        state.view_path = state.current_path.clone();
+    }
+
+    // Edit overlays (crop, measure, brush) are drawn in untransformed space, so
+    // editing always happens on an upright image.
+    if state.persistent_settings.edit_enabled && !state.view.is_upright() {
+        state.view = Default::default();
+        state.redraw = true;
+    }
+
+    // Left button pans, transformed so that the image follows the cursor even
+    // when it is rotated or mirrored.
+    if state.drag_enabled && !state.mouse_grab {
+        let delta = state.unview_delta(state.mouse_delta);
+        state.image_geometry.offset += delta;
         limit_offset(app, state);
+    }
+
+    // Right button held: zoom with the vertical drag.
+    if state.zoom_drag {
+        if app.mouse.is_down(MouseButton::Right) {
+            let dy = state.mouse_delta.y;
+            if dy.abs() > 0.0 && !state.pointer_over_ui {
+                let delta = gestures::drag_zoom_delta(dy, state.image_geometry.scale);
+                zoom_at(delta, state.cursor, state);
+                state.zoom_drag_moved |= dy.abs() > 1.0;
+            }
+        } else {
+            // Mouse up was lost (window lost focus, released outside, ...).
+            state.zoom_drag = false;
+        }
+    }
+
+    // Middle button: a press that travels is a fine rotation, a press that does
+    // not travel is a mirror click (handled on release).
+    match state.middle {
+        MiddleGesture::Idle => {}
+        current => {
+            if app.mouse.is_down(MouseButton::Middle) && !state.edit_state.painting {
+                state.middle = current.moved((state.cursor.x, state.cursor.y));
+                if state.middle.is_rotating() {
+                    // Rotation and zoom must not run at the same time.
+                    state.zoom_drag = false;
+                    let gain = gestures::rotate_gain(app.keyboard.shift());
+                    let dx = state.mouse_delta.x;
+                    if dx.abs() > 0.0 {
+                        state.view = state.view.add_angle(dx * gain);
+                        state.redraw = true;
+                    }
+                }
+            } else {
+                state.middle = MiddleGesture::Idle;
+            }
+        }
+    }
+
+    // Navigation throttling: a dropped request is replayed once the cooldown is
+    // over, so a fast flick never loses its last image.
+    if state.pending_nav != 0 {
+        let ready = state
+            .last_nav_at
+            .map_or(true, |t| t.elapsed().as_millis() >= NAV_THROTTLE_MS);
+        if ready {
+            let dir = state.pending_nav;
+            state.pending_nav = 0;
+            apply_navigate(state, dir);
+        }
     }
 
     // Since we can't access the window in the event loop, we store it in the state
@@ -703,9 +774,11 @@ fn update(app: &mut App, state: &mut OculanteState) {
     }
 
     if state.persistent_settings.info_enabled || state.edit_state.painting {
+        // Hit testing happens in the untransformed frame so that the info panel
+        // reports the pixel that is actually under the cursor.
         state.cursor_relative = pos_from_coord(
             state.image_geometry.offset,
-            state.cursor,
+            state.unview_point(state.cursor),
             Vector2::new(
                 state.image_geometry.dimensions.0 as f32,
                 state.image_geometry.dimensions.1 as f32,
@@ -1058,12 +1131,47 @@ fn drawe(app: &mut App, gfx: &mut Graphics, plugins: &mut Plugins, state: &mut O
 
         if !state.pointer_over_ui
             && !state.mouse_grab
+            && !state.edit_state.painting
             && ctx.input(|r| {
                 r.pointer
                     .button_double_clicked(egui::PointerButton::Primary)
             })
         {
-            toggle_fullscreen(app, state);
+            // Double click toggles between 1:1 and fit; fullscreen stays on `F`.
+            if gestures::is_actual_size(state.image_geometry.scale) {
+                state.reset_image = true;
+                reset_view_transform(state);
+            } else {
+                set_zoom(1.0, None, state);
+            }
+            app.window().request_frame();
+        }
+
+        if !state.pointer_over_ui
+            && !state.mouse_grab
+            && !state.edit_state.painting
+            // A right drag that actually zoomed must not count as a click.
+            && !state.zoom_drag_moved
+            && ctx.input(|r| {
+                r.pointer
+                    .button_double_clicked(egui::PointerButton::Secondary)
+            })
+        {
+            toggle_always_on_top(app, state);
+        }
+
+        // While rotating with the middle button, show the angle. Precision work
+        // without a readout is guesswork.
+        if state.middle.is_rotating() {
+            let angle = state.view.angle_deg;
+            let mirrored = if state.view.mirror_x { " | mirrored" } else { "" };
+            egui::Area::new(Id::new("view_angle"))
+                .fixed_pos(egui::pos2(12.0, 60.0))
+                .show(ctx, |ui| {
+                    egui::Frame::popup(ui.style()).show(ui, |ui| {
+                        ui.label(egui::RichText::new(format!("∠ {angle:.1}°{mirrored}")).monospace());
+                    });
+                });
         }
 
         if state.new_image_loaded {
@@ -1159,7 +1267,10 @@ fn drawe(app: &mut App, gfx: &mut Graphics, plugins: &mut Plugins, state: &mut O
                     draw_area.height().min(app.window().height() as f32),
                 );
                 let img_size = current_image.size_vec();
-                let scaled_to_fit = window_size.component_div(&img_size).amin();
+                // Fit the rotated bounding box, not the upright image.
+                let (aabb_w, aabb_h) = state.view.aabb(img_size.x, img_size.y);
+                let fitted = window_size.component_div(&nalgebra::Vector2::new(aabb_w, aabb_h));
+                let scaled_to_fit = fitted.amin();
                 state.image_geometry.scale = if state.persistent_settings.auto_scale {
                     scaled_to_fit
                 } else {
@@ -1181,51 +1292,56 @@ fn drawe(app: &mut App, gfx: &mut Graphics, plugins: &mut Plugins, state: &mut O
         settings_ui(app, ctx, state, gfx);
     });
 
-    if let Some(texture) = &state.current_texture.get() {
-        // align to pixel to prevent distortion
-        let aligned_offset_x = state.image_geometry.offset.x.trunc();
-        let aligned_offset_y = state.image_geometry.offset.y.trunc();
+    // Everything needed for the draw calls is computed up front: `get()` below
+    // takes a mutable borrow of the state.
+    // align to pixel to prevent distortion, but only when the view is not
+    // transformed: a fractional rotation would otherwise show 1px seams between
+    // the tiles of a huge image.
+    let (aligned_offset_x, aligned_offset_y) = if state.view.is_upright() {
+        (
+            state.image_geometry.offset.x.trunc(),
+            state.image_geometry.offset.y.trunc(),
+        )
+    } else {
+        (state.image_geometry.offset.x, state.image_geometry.offset.y)
+    };
+    let image_dims = state.image_dims_f();
+    let pivot = Vector2::new(aligned_offset_x, aligned_offset_y)
+        + image_dims * state.image_geometry.scale / 2.0;
+    // One transform for every draw call below (image, checker, frame).
+    let view_matrix = state.view.matrix(
+        state.image_geometry.scale,
+        (aligned_offset_x, aligned_offset_y),
+        (pivot.x, pivot.y),
+    );
+    let show_checker = state.persistent_settings.show_checker_background;
+    let show_frame = state.persistent_settings.show_frame;
+    let tiling = state.tiling;
 
-        if state.persistent_settings.show_checker_background {
+    if let Some(texture) = &state.current_texture.get() {
+        if show_checker {
             if let Some(checker) = &state.checker_texture {
                 draw.pattern(checker)
-                    .size(
-                        texture.width() * state.image_geometry.scale * state.tiling as f32,
-                        texture.height() * state.image_geometry.scale * state.tiling as f32,
-                    )
+                    .size(image_dims.x, image_dims.y)
                     .blend_mode(BlendMode::ADD)
-                    .translate(aligned_offset_x, aligned_offset_y);
+                    .transform(view_matrix);
             }
         }
-        if state.tiling < 2 {
-            texture.draw_textures(
-                &mut draw,
-                aligned_offset_x,
-                aligned_offset_y,
-                state.image_geometry.scale,
-            );
+        if tiling < 2 {
+            texture.draw_textures(&mut draw, view_matrix, (0.0, 0.0));
         } else {
-            for yi in 0..state.tiling {
-                for xi in 0..state.tiling {
-                    //The "old" version used only a static offset, is this correct?
-                    let translate_x = (xi as f32 * texture.width() * state.image_geometry.scale
-                        + state.image_geometry.offset.x)
-                        .trunc();
-                    let translate_y = (yi as f32 * texture.height() * state.image_geometry.scale
-                        + state.image_geometry.offset.y)
-                        .trunc();
-
+            for yi in 0..tiling {
+                for xi in 0..tiling {
                     texture.draw_textures(
                         &mut draw,
-                        translate_x,
-                        translate_y,
-                        state.image_geometry.scale,
+                        view_matrix,
+                        (xi as f32 * texture.width(), yi as f32 * texture.height()),
                     );
                 }
             }
         }
 
-        if state.persistent_settings.show_frame {
+        if show_frame {
             draw.rect((0.0, 0.0), texture.size())
                 .stroke(1.0)
                 .color(Color {
@@ -1235,8 +1351,7 @@ fn drawe(app: &mut App, gfx: &mut Graphics, plugins: &mut Plugins, state: &mut O
                     a: 0.5,
                 })
                 .blend_mode(BlendMode::ADD)
-                .scale(state.image_geometry.scale, state.image_geometry.scale)
-                .translate(aligned_offset_x, aligned_offset_y);
+                .transform(view_matrix);
         }
 
         if state.persistent_settings.info_enabled
@@ -1311,22 +1426,80 @@ fn drawe(app: &mut App, gfx: &mut Graphics, plugins: &mut Plugins, state: &mut O
 // Make sure offset is restricted to window size so we don't offset to infinity
 fn limit_offset(app: &mut App, state: &mut OculanteState) {
     let window_size = app.window().size();
-    let scaled_image_size = (
-        state.image_geometry.dimensions.0 as f32 * state.image_geometry.scale,
-        state.image_geometry.dimensions.1 as f32 * state.image_geometry.scale,
-    );
+    // Use the rotated bounding box, otherwise the corners of a rotated image
+    // can not be reached.
+    let scaled = state.image_dims_f() * state.image_geometry.scale;
+    let (scaled_w, scaled_h) = state.view.aabb(scaled.x, scaled.y);
     state.image_geometry.offset.x = state
         .image_geometry
         .offset
         .x
         .min(window_size.0 as f32)
-        .max(-scaled_image_size.0);
+        .max(-scaled_w);
     state.image_geometry.offset.y = state
         .image_geometry
         .offset
         .y
         .min(window_size.1 as f32)
-        .max(-scaled_image_size.1);
+        .max(-scaled_h);
+}
+
+/// Minimum time between two image switches driven by the wheel.
+const NAV_THROTTLE_MS: u128 = 100;
+
+/// Switch image, throttled so that a trackpad flick does not queue a hundred
+/// decoders. A dropped request is remembered and replayed once the cooldown
+/// expired, so the last notch is never lost.
+fn navigate(state: &mut OculanteState, direction: i32) {
+    let ready = state
+        .last_nav_at
+        .map_or(true, |t| t.elapsed().as_millis() >= NAV_THROTTLE_MS);
+    if !ready {
+        state.pending_nav = direction;
+        return;
+    }
+    state.last_nav_at = Some(Instant::now());
+    state.pending_nav = 0;
+    apply_navigate(state, direction);
+}
+
+fn apply_navigate(state: &mut OculanteState, direction: i32) {
+    if direction > 0 {
+        next_image(state);
+    } else if direction < 0 {
+        prev_image(state);
+    }
+}
+
+/// One quarter turn, display only. Never touches the file on disk.
+fn rotate_view(app: &mut App, state: &mut OculanteState, steps: i32) {
+    if state.persistent_settings.edit_enabled {
+        state.send_message_warn("Rotation is disabled while editing");
+        return;
+    }
+    state.view = state.view.quarter_steps(steps);
+    state.redraw = true;
+    // Keeps the transform alive for the next frame in apps with vsync off.
+    app.window().request_frame();
+    debug!("View rotation: {:.1}°", state.view.angle_deg);
+}
+
+/// Horizontal mirror, display only.
+fn toggle_mirror(state: &mut OculanteState) {
+    if state.current_texture.get().is_none() {
+        return;
+    }
+    if state.persistent_settings.edit_enabled {
+        state.send_message_warn("Mirroring is disabled while editing");
+        return;
+    }
+    state.view = state.view.toggle_mirror();
+    state.redraw = true;
+    if state.view.mirror_x {
+        state.send_message_info("Mirrored (display only)");
+    } else {
+        state.send_message_info("Mirror off");
+    }
 }
 
 // Handle [`CompareNext`] events

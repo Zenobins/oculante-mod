@@ -1,6 +1,7 @@
 use crate::{
     comparelist::CompareList,
     filebrowser::BrowserDir,
+    gestures,
     image_editing::EditState,
     scrubber::Scrubber,
     settings::{PersistentSettings, VolatileSettings},
@@ -12,10 +13,12 @@ use crate::{
 use egui_notify::Toasts;
 use image::DynamicImage;
 use nalgebra::Vector2;
+use notan::math::Mat3;
 use notan::{prelude::Texture, AppState};
 use std::{
     path::{Path, PathBuf},
     sync::mpsc::{self, Receiver, Sender},
+    time::Instant,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -102,6 +105,24 @@ pub struct OculanteState {
     pub filebrowser_last_dir: BrowserDir,
     pub thumbnails: Thumbnails,
     pub new_image_loaded: bool,
+    /// Display only rotation/mirror. Never written to disk.
+    pub view: gestures::ViewTransform,
+    /// Path the current [`Self::view`] belongs to, used to reset on navigation.
+    pub view_path: Option<PathBuf>,
+    /// Wheel accumulators for navigation, zoom and rotation.
+    pub wheel: gestures::WheelState,
+    /// Right button is held and drives the zoom.
+    pub zoom_drag: bool,
+    /// Right button drag actually moved, so a double click is not inferred.
+    pub zoom_drag_moved: bool,
+    /// Middle button state machine: click mirrors, drag rotates.
+    pub middle: gestures::MiddleGesture,
+    /// Last image switch, used to throttle navigation.
+    pub last_nav_at: Option<Instant>,
+    /// Navigation that was dropped because of the throttle.
+    pub pending_nav: i32,
+    /// Throttles the "angle" and "mirrored" toasts.
+    pub last_view_msg_at: Option<Instant>,
 }
 
 impl OculanteState {
@@ -132,6 +153,54 @@ impl OculanteState {
                 .map(Path::to_path_buf)
                 .unwrap_or_else(|| self.volatile_settings.last_open_directory.clone()),
         }
+    }
+
+    /// Size of the drawn image in pixels, including tiling.
+    pub fn image_dims_f(&self) -> Vector2<f32> {
+        Vector2::new(
+            self.image_geometry.dimensions.0 as f32,
+            self.image_geometry.dimensions.1 as f32,
+        ) * self.tiling as f32
+    }
+
+    /// Size of the drawn image on screen, after rotation and mirroring.
+    pub fn image_screen_dims(&self) -> Vector2<f32> {
+        let d = self.image_dims_f() * self.image_geometry.scale;
+        let (w, h) = self.view.aabb(d.x, d.y);
+        Vector2::new(w, h)
+    }
+
+    /// Centre of the image on screen, in the untransformed frame.
+    pub fn view_pivot(&self) -> Vector2<f32> {
+        self.image_geometry.offset + self.image_dims_f() * self.image_geometry.scale / 2.0
+    }
+
+    /// The single transform used for drawing and for hit testing.
+    pub fn view_matrix(&self) -> Mat3 {
+        let pivot = self.view_pivot();
+        self.view.matrix(
+            self.image_geometry.scale,
+            (self.image_geometry.offset.x, self.image_geometry.offset.y),
+            (pivot.x, pivot.y),
+        )
+    }
+
+    /// Screen point -> point in the untransformed screen frame.
+    pub fn unview_point(&self, screen: Vector2<f32>) -> Vector2<f32> {
+        let pivot = self.view_pivot();
+        let (x, y) = self.view.untransform_point(
+            (screen.x, screen.y),
+            self.image_geometry.scale,
+            (self.image_geometry.offset.x, self.image_geometry.offset.y),
+            (pivot.x, pivot.y),
+        );
+        Vector2::new(x, y)
+    }
+
+    /// Screen delta -> delta in the untransformed screen frame.
+    pub fn unview_delta(&self, delta: Vector2<f32>) -> Vector2<f32> {
+        let (x, y) = self.view.untransform_delta((delta.x, delta.y));
+        Vector2::new(x, y)
     }
 }
 
@@ -193,6 +262,15 @@ impl Default for OculanteState {
             filebrowser_last_dir: Default::default(),
             thumbnails: Default::default(),
             new_image_loaded: false,
+            view: Default::default(),
+            view_path: None,
+            wheel: Default::default(),
+            zoom_drag: false,
+            zoom_drag_moved: false,
+            middle: Default::default(),
+            last_nav_at: None,
+            pending_nav: 0,
+            last_view_msg_at: None,
         }
     }
 }

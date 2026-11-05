@@ -7,7 +7,7 @@ use log::error;
 use log::warn;
 use notan::app::Color;
 use notan::draw::*;
-use notan::math::{Mat4, Vec4};
+use notan::math::{vec2, Mat3, Mat4, Vec4};
 use notan::prelude::{BlendMode, Buffer, Graphics, ShaderSource, Texture, TextureFilter};
 pub struct TexWrap {
     texture_array: Vec<Texture>,
@@ -689,26 +689,25 @@ impl TexWrap {
         })
     }
 
-    pub fn draw_textures(
-        &self,
-        draw: &mut Draw,
-        translation_x: f32,
-        translation_y: f32,
-        scale: f32,
-    ) {
+    /// Draw all tiles with one shared transform.
+    ///
+    /// `transform` maps image pixels to window pixels (scale, translation,
+    /// rotation and mirror). `repeat_px` offsets a whole repetition of the image
+    /// for the tiling preview, in image pixels.
+    pub fn draw_textures(&self, draw: &mut Draw, transform: Mat3, repeat_px: (f32, f32)) {
         self.add_draw_shader(draw);
 
         let mut tex_idx = 0;
         for row_idx in 0..self.row_count {
-            let translate_y =
-                translation_y as f64 + scale as f64 * row_idx as f64 * self.row_translation as f64;
             for col_idx in 0..self.col_count {
-                let translate_x = translation_x as f64
-                    + scale as f64 * col_idx as f64 * self.col_translation as f64;
+                // Tile offset inside the image, then the repetition offset.
+                let tile_offset = vec2(
+                    repeat_px.0 + col_idx as f32 * self.col_translation as f32,
+                    repeat_px.1 + row_idx as f32 * self.row_translation as f32,
+                );
                 draw.image(&self.texture_array[tex_idx])
                     .blend_mode(BlendMode::NORMAL)
-                    .scale(scale, scale)
-                    .translate(translate_x as f32, translate_y as f32);
+                    .transform(transform * Mat3::from_translation(tile_offset));
                 tex_idx += 1;
             }
         }
