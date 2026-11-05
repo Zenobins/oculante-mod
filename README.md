@@ -72,7 +72,7 @@ Notes:
   lives in `../tools/`, so:
 
 ```bash
-export PATH="/Users/raymond/WorkBuddy/应用mod/tools/cmake-3.31.6-macos-universal/CMake.app/Contents/bin:$PATH"
+export PATH="$HOME/tools/cmake-3.31.6-macos-universal/CMake.app/Contents/bin:$PATH"
 cargo build --release
 ```
 

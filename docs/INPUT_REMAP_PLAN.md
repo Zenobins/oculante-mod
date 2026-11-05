@@ -1,6 +1,6 @@
 # Oculante 输入操作重构 — 方案文档（v6）
 
-- 仓库：`woelper/oculante` → 本地 `/Users/raymond/WorkBuddy/应用mod/oculante`
+- 仓库：`woelper/oculante` → 本地 `~/oculante`
 - 基线：`master` @ `fdc05eb`，v0.9.6，Rust 2021，notan 0.14 / egui 0.31
 - 状态：**已实现并通过用户验收（2026-11-06）**，冻结
 - v6 变更：补充交付状态（§10）；多窗口、Finder 打开事件、多选合并已落地，详见 `docs/MOD_CHANGELOG.md` M11/M12

@@ -144,8 +144,8 @@
 构建命令（每次 shell 都需要）：
 
 ```bash
-export PATH="/Users/raymond/WorkBuddy/应用mod/tools/cmake-3.31.6-macos-universal/CMake.app/Contents/bin:$PATH"
-cd /Users/raymond/WorkBuddy/应用mod/oculante
+export PATH="$HOME/tools/cmake-3.31.6-macos-universal/CMake.app/Contents/bin:$PATH"
+cd ~/oculante
 cargo test --lib gestures::
 cargo build --release
 ```
@@ -180,7 +180,7 @@ cargo build --release
 本地运行：
 
 ```bash
-cd /Users/raymond/WorkBuddy/应用mod/oculante
+cd ~/oculante
 ./target/release/oculante tests/moss.jpg
 ```
 

@@ -43,8 +43,8 @@ tar xzf cmake.tar.gz && rm cmake.tar.gz
 ### 2.2 每次构建前
 
 ```bash
-export PATH="/Users/raymond/WorkBuddy/应用mod/tools/cmake-3.31.6-macos-universal/CMake.app/Contents/bin:$PATH"
-cd /Users/raymond/WorkBuddy/应用mod/oculante
+export PATH="$HOME/tools/cmake-3.31.6-macos-universal/CMake.app/Contents/bin:$PATH"
+cd ~/oculante
 ```
 
 依赖已 `cargo fetch` 过；首次 `cargo build` 约 5 分钟（dev）/ 11 分钟（release，`lto = "fat"`），之后增量 3~4 分钟。
@@ -375,8 +375,8 @@ git diff master..HEAD > input-remap.patch
 ## 11. 一页速查
 
 ```bash
-export PATH="/Users/raymond/WorkBuddy/应用mod/tools/cmake-3.31.6-macos-universal/CMake.app/Contents/bin:$PATH"
-cd /Users/raymond/WorkBuddy/应用mod/oculante
+export PATH="$HOME/tools/cmake-3.31.6-macos-universal/CMake.app/Contents/bin:$PATH"
+cd ~/oculante
 
 cargo test --lib          # 39 项，必须全绿
 cargo build --release     # 3~11 分钟
