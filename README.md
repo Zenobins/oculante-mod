@@ -24,6 +24,42 @@ Oculante is a free, open-source, bloat-free, and privacy-respecting image viewer
 ![Crates.io](https://img.shields.io/crates/d/oculante?label=crates.io%20downloads)
 ![Screenshot](res/previews/front.png "Screenshot")
 
+## Mouse & keyboard (local fork)
+
+This fork only changes the input mapping and disables one action. No new image
+feature was added: rotation and mirroring are **display only** and never write to
+the file on disk.
+
+| Input | Action |
+|---|---|
+| Wheel up / down | Previous / next image (one image per notch, trackpad is accumulated) |
+| Ctrl (or ⌘) + wheel | Zoom, anchored at the cursor |
+| Shift + wheel | Rotate the view by 90° (right / left), display only |
+| Right button drag up / down | Zoom in / out |
+| Right button double click | Toggle "always on top" |
+| Left button drag | Pan |
+| Left button double click | Toggle between 1:1 and fit-to-window |
+| Middle button click | Mirror horizontally, display only (click again to undo) |
+| Middle button drag | Fine rotation, 0.2°/px (hold shift for 0.04°/px) |
+| ← / → / Home / End | Previous / next / first / last image (unchanged) |
+| `[` / `]` | Lossless JPEG rotation (unchanged, writes the file) |
+| Delete | Move the file to the trash (unchanged, asks for confirmation) |
+| Shift + Delete | **Removed.** Clearing the image without deleting it is disabled |
+
+Notes:
+
+- Rotation and mirroring are temporary: switching to another image resets them,
+  and returning to the previous image shows it upright again.
+- Both are disabled while the edit panel is enabled (edit overlays are drawn in
+  image space).
+- Building needs `cmake` for `turbojpeg-sys`. In this checkout a portable copy
+  lives in `../tools/`, so:
+
+```bash
+export PATH="/Users/raymond/WorkBuddy/应用mod/tools/cmake-3.31.6-macos-universal/CMake.app/Contents/bin:$PATH"
+cargo build --release
+```
+
 ## Flipbook
 
 With configurable caching, Oculante can quickly step through image sequences:

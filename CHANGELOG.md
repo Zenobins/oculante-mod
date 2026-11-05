@@ -1,3 +1,15 @@
+# Unreleased (local fork: input remap)
+
+### Changes
+
+* Wheel switches images, Ctrl/Cmd + wheel zooms (was the other way round)
+* Right button drag zooms, right button double click toggles always on top
+* Left button double click toggles 1:1 and fit instead of fullscreen
+* Shift + wheel rotates the view in 90 degree steps (display only, no disk write)
+* Middle button click mirrors horizontally (display only), middle button drag rotates finely
+* Rotation and mirroring reset when another image is opened
+* ClearImage (Shift+Delete and the toolbar button) is disabled; only trashing a file is offered
+
 \# 0.9.6
 
 ### :beetle: Bug Fixes
