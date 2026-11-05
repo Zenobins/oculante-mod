@@ -68,7 +68,9 @@ pub struct Mods { pub ctrl: bool, pub shift: bool, pub alt: bool }
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum WheelAction { PrevImage, NextImage, Zoom(f32), RotateCw, RotateCcw }
 
-pub const NAV_THRESHOLD: f32 = 10.0;    // 翻图阈值（真滚轮一格=50；鼠标/驱动差异大，另由设置页灵敏度缩放）
+pub const LINE_MIN: f32 = 45.0;         // 低于此值不可能是"行"滚轮（notan 已把像素值除以 10）
+pub const PX_PER_IMAGE: f32 = 30.0;     // 精确滚动每 30px 翻一张（设置页灵敏度可缩放）
+pub const GESTURE_GAP_MS: f32 = 250.0;  // 停顿超过该值视为新手势，丢弃余量
 pub const ROTATE_THRESHOLD: f32 = 50.0; // 与一格滚轮对齐
 pub const DRAG_ZOOM_SPEED: f32 = 0.004; // 右键拖拽灵敏度
 pub const ROT_DRAG_GAIN: f32 = 0.20;    // 中键拖拽：度/像素
@@ -143,6 +145,19 @@ pub fn toggle_always_on_top(app: &mut App, state: &mut OculanteState);
 `set_zoom`、`ZoomIn/ZoomOut`、平移（左/中键 + 键盘 Pan）、`cursor_relative` 全部改走这两个 helper —— 镜像/旋转下的平移方向、缩放锚点、像素坐标才不会错（见 §9.2 B1/B2、§9.7 G1/G2）。
 
 > 好处：`matrix()` 与 `untransform_point()` 互为逆，可用一条断言锁死（§9.5 E2），避免"渲染对、命中错"的经典分叉。
+
+### 3.2b 几何不变量（本轮的教训，改代码前先读）
+
+实测与推导确认：`offset` 是**纯屏幕平移**，旋转/镜像都在“随 offset 移动的图像中心”处发生，因此：
+
+| 操作 | 正确公式 | 说明 |
+|---|---|---|
+| 平移 | `offset += 屏幕位移`（原样） | 绝不能再逆旋位移，否则图片会沿旋转后的轴走（用户反馈的 bug） |
+| 缩放锚点 | `offset -= (cursor - offset) * Δ / scale`（cursor 用**原始屏幕坐标**） | 相机/图片的旋转项会相互抵消，光标下的像素严格不动（单测已锁） |
+| 命中检测 | 先 `M⁻¹`（只含旋转/镜像，不含 scale/offset）再除以 scale | 得到图像像素坐标 |
+| 边界限制 | 在**屏幕空间**限制图像中心：`pivot ∈ [W - aabb/2, aabb/2]` | 否则限制框会随图片旋转，拖动到边缘时方向“被旋转影响” |
+
+对应单测：`panning_is_a_pure_screen_translation`、`zooming_keeps_the_pixel_under_the_cursor`。
 
 ### 3.3 `MouseWheel` 分支（替换 `main.rs:576-617`）
 

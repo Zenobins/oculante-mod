@@ -32,13 +32,13 @@ the file on disk.
 
 | Input | Action |
 |---|---|
-| Wheel up / down | Previous / next image (one image per notch; adjust "Wheel image switching sensitivity" in the settings if it feels sluggish) |
+| Wheel up / down | Previous / next image. A classic wheel: one notch = one image. Precise devices (trackpads, smooth scrolling mice): every 30 px of travel. Tune with "Wheel image switching sensitivity" |
 | Ctrl (or ⌘) + wheel | Zoom, anchored at the cursor |
 | Shift + wheel | Rotate the view by 90° (right / left), display only |
 | Right button drag up / down | Zoom in / out |
 | Right button double click | Toggle "always on top" |
 | Left button drag | Pan |
-| Left button double click | Toggle between 1:1 and fit-to-window |
+| Left button double click | Toggle between 1:1 and fit-to-window, zooming around the cursor |
 | Middle button click | Mirror horizontally, display only (click again to undo) |
 | Middle button drag | Fine rotation, 0.2°/px (hold shift for 0.04°/px) |
 | ← / → / Home / End | Previous / next / first / last image (unchanged) |
@@ -50,6 +50,10 @@ Notes:
 
 - Rotation and mirroring are temporary: switching to another image resets them,
   and returning to the previous image shows it upright again.
+- "View 1:1" from the menu zooms around the **image centre** (the pointer is
+  usually somewhere else when using a menu), the double click around the cursor.
+- Panning always follows the window axes, also when the image is rotated: the
+  picture moves exactly with the cursor.
 - Both are disabled while the edit panel is enabled (edit overlays are drawn in
   image space).
 - Building needs `cmake` for `turbojpeg-sys`. In this checkout a portable copy

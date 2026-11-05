@@ -11,13 +11,23 @@ use notan::math::{vec2, Mat3};
 // ---------------------------------------------------------------------------
 
 /// One notch of a real mouse wheel as reported by winit (`LineDelta * 50`).
+///
+/// macOS reports one of two very different shapes (see `NSEvent`):
+/// `hasPreciseScrollingDeltas == false` -> lines, multiplied by 50 by notan,
+/// `true` -> pixels, divided by 10 by notan. Trackpads and mice with a smooth
+/// scrolling driver (Logitech, Apple Magic Mouse) are *precise*, so a single
+/// physical notch arrives as a burst of small pixel deltas instead of one line.
 pub const WHEEL_NOTCH: f32 = 50.0;
-/// Accumulated travel that switches one image. One mouse wheel notch is
-/// [`WHEEL_NOTCH`], but smooth scrolling mice and drivers can report much
-/// smaller values, which is why the settings expose a sensitivity on top.
-pub const NAV_THRESHOLD: f32 = 10.0;
-/// Accumulated travel that equals one 90 degree rotation step.
-pub const ROTATE_THRESHOLD: f32 = 50.0;
+/// Below this a value can not be a line notch (notan divides pixel deltas by 10).
+pub const LINE_MIN: f32 = 45.0;
+/// Pixels of precise scrolling that switch one image. One notch of a smooth
+/// scrolling mouse is roughly 30-60 px, a trackpad swipe a few hundred.
+pub const PX_PER_IMAGE: f32 = 30.0;
+/// Precise scrolling travel that counts as one wheel notch for zoom/rotation.
+pub const PX_PER_NOTCH: f32 = 40.0;
+/// A pause longer than this starts a new scroll gesture, so leftovers from the
+/// previous one do not have to be scrolled off first.
+pub const GESTURE_GAP_MS: f32 = 250.0;
 /// Zoom speed of the right button drag (scale factor per pixel).
 pub const DRAG_ZOOM_SPEED: f32 = 0.004;
 /// Degrees of rotation per pixel while dragging with the middle button.
@@ -84,10 +94,47 @@ impl Accumulator {
     }
 }
 
+/// What kind of wheel event this is, normalized to comparable units.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum WheelInput {
+    /// Discrete notches (a classic wheel). 1.0 is one click of the wheel.
+    Line(f32),
+    /// Precise, continuous travel in pixels (trackpad, smooth scrolling mouse).
+    Pixel(f32),
+}
+
+/// Tell a line based wheel apart from precise scrolling.
+///
+/// notan already destroyed the distinction: winit's `LineDelta` is multiplied by
+/// [`WHEEL_NOTCH`], winit's `PixelDelta` is divided by 10. A line value is
+/// therefore always a whole multiple of 50, while a pixel value almost never is
+/// and is far smaller.
+pub fn classify_wheel(dy: f32) -> WheelInput {
+    let notches = dy / WHEEL_NOTCH;
+    if dy.abs() >= LINE_MIN && (notches - notches.round()).abs() < 1e-3 {
+        WheelInput::Line(notches)
+    } else {
+        // Undo notan's division to get pixels back.
+        WheelInput::Pixel(dy * 10.0)
+    }
+}
+
+/// Convert any wheel event into (possibly fractional) notches.
+///
+/// Zoom and rotation use this so that a trackpad (30-60 px per gesture step)
+/// needs about the same effort as one click of a classic wheel.
+pub fn to_notches(dy: f32) -> f32 {
+    match classify_wheel(dy) {
+        WheelInput::Line(notches) => notches,
+        WheelInput::Pixel(px) => px / PX_PER_NOTCH,
+    }
+}
+
 /// One accumulator per gesture so that e.g. a zoom does not disturb image nav.
 #[derive(Debug, Default)]
 pub struct WheelState {
-    nav: Accumulator,
+    /// Precise scrolling travel that did not switch an image yet, in pixels.
+    nav_px: f32,
     zoom: Accumulator,
     rotate: Accumulator,
 }
@@ -95,18 +142,19 @@ pub struct WheelState {
 impl WheelState {
     /// Modifier precedence is fixed: shift (rotate) > ctrl (zoom) > plain (nav).
     ///
-    /// `nav_threshold` is the accumulated travel that switches one image; see
-    /// [`NAV_THRESHOLD`] and the wheel sensitivity setting.
+    /// `nav_px` is the precise scroll travel that switches one image, `gap_ms`
+    /// the time since the previous wheel event.
     pub fn resolve(
         &mut self,
         dx: f32,
         dy: f32,
         mods: Mods,
-        nav_threshold: f32,
+        nav_px: f32,
+        gap_ms: f32,
     ) -> Option<WheelAction> {
         if mods.shift {
             let travel = dominant_delta(dx, dy) * SHIFT_AXIS_SIGN;
-            let steps = self.rotate.steps(travel, ROTATE_THRESHOLD);
+            let steps = self.rotate.steps(to_notches(travel), 1.0);
             return match steps.cmp(&0) {
                 std::cmp::Ordering::Greater => Some(if ROT_DIR_SIGN > 0.0 {
                     WheelAction::RotateCw
@@ -123,23 +171,50 @@ impl WheelState {
         }
 
         if mods.ctrl {
-            let steps = self.zoom.steps(dy, WHEEL_NOTCH).clamp(-3, 3);
+            let steps = self.zoom.steps(to_notches(dy), 1.0).clamp(-3, 3);
             return (steps != 0).then_some(WheelAction::Zoom(steps));
         }
 
-        // Exactly one image per event: a trackpad flick must not skip a folder.
-        let steps = self.nav.steps(dy, nav_threshold.max(1.0));
-        if steps > 0 {
-            Some(WheelAction::PrevImage)
-        } else if steps < 0 {
-            Some(WheelAction::NextImage)
-        } else {
-            None
+        match classify_wheel(dy) {
+            // A classic wheel: one notch is one image, never scaled or banked.
+            WheelInput::Line(notches) => {
+                self.nav_px = 0.0;
+                if notches > 0.0 {
+                    Some(WheelAction::PrevImage)
+                } else if notches < 0.0 {
+                    Some(WheelAction::NextImage)
+                } else {
+                    None
+                }
+            }
+            // Precise scrolling: switch after `nav_px` pixels of travel.
+            WheelInput::Pixel(px) => {
+                if gap_ms > GESTURE_GAP_MS {
+                    self.nav_px = 0.0;
+                }
+                // Clamp one event: a fast flick can report hundreds of pixels,
+                // which must not be turned into a burst of image switches.
+                self.nav_px += px.clamp(-200.0, 200.0);
+                let threshold = nav_px.max(1.0);
+                if self.nav_px.abs() >= threshold {
+                    let action = if self.nav_px > 0.0 {
+                        WheelAction::PrevImage
+                    } else {
+                        WheelAction::NextImage
+                    };
+                    // Drop the overshoot; one event must never queue several
+                    // switches, and a leftover would leak into the next event.
+                    self.nav_px = 0.0;
+                    Some(action)
+                } else {
+                    None
+                }
+            }
         }
     }
 
     pub fn reset_nav(&mut self) {
-        self.nav.reset();
+        self.nav_px = 0.0;
     }
 }
 
@@ -213,12 +288,12 @@ impl ViewTransform {
         )
     }
 
-    /// `M = Mirror(pivot) * R(pivot) * T(offset) * S(scale)`
+    /// Mirror * rotation about `pivot`, without scale and translation.
     ///
-    /// `pivot` is the image centre in screen space *before* rotating, i.e.
-    /// `offset + size * scale / 2`. All draws use this one matrix, so tiles of
-    /// a huge image stay aligned.
-    pub fn matrix(&self, scale: f32, offset: (f32, f32), pivot: (f32, f32)) -> Mat3 {
+    /// Maps the untransformed screen frame to the final screen frame; this is
+    /// the part that has to be undone for hit testing, because offsets and zoom
+    /// maths live in the untransformed screen frame.
+    pub fn view_space_matrix(&self, pivot: (f32, f32)) -> Mat3 {
         let p = vec2(pivot.0, pivot.1);
         let rotate = Mat3::from_translation(p)
             * Mat3::from_angle(self.angle_deg.to_radians() * ROT_DIR_SIGN)
@@ -228,8 +303,16 @@ impl ViewTransform {
         } else {
             Mat3::IDENTITY
         };
-        mirror
-            * rotate
+        mirror * rotate
+    }
+
+    /// `M = Mirror(pivot) * R(pivot) * T(offset) * S(scale)`
+    ///
+    /// `pivot` is the image centre in screen space *before* rotating, i.e.
+    /// `offset + size * scale / 2`. All draws use this one matrix, so tiles of
+    /// a huge image stay aligned.
+    pub fn matrix(&self, scale: f32, offset: (f32, f32), pivot: (f32, f32)) -> Mat3 {
+        self.view_space_matrix(pivot)
             * Mat3::from_translation(vec2(offset.0, offset.1))
             * Mat3::from_scale(vec2(scale, scale))
     }
@@ -249,8 +332,10 @@ impl ViewTransform {
 
     /// Screen delta -> delta in the untransformed screen frame.
     ///
-    /// Only the linear part (mirror then rotation) applies: offsets are kept in
-    /// screen units, so no scaling must be involved here.
+    /// Only the linear part (mirror then rotation) applies. Note that panning
+    /// does *not* use this: the offset is a plain screen space translation, and
+    /// undoing the rotation here would make the image drift along a rotated axis
+    /// (see `panning_is_a_pure_screen_translation`).
     pub fn untransform_delta(&self, delta: (f32, f32)) -> (f32, f32) {
         let mirrored = if self.mirror_x {
             vec2(-delta.0, delta.1)
@@ -388,40 +473,100 @@ mod tests {
     }
 
     #[test]
-    fn smooth_scrolling_mouse_switches_after_one_notch() {
-        // Mice with smooth scrolling (and some drivers) report ~10 per notch
-        // instead of the 50 winit uses for a line based wheel.
+    fn classifies_line_and_pixel_deltas() {
+        // notan multiplies winit's LineDelta by 50 ...
+        assert_eq!(classify_wheel(50.0), WheelInput::Line(1.0));
+        assert_eq!(classify_wheel(-150.0), WheelInput::Line(-3.0));
+        // ... and divides a precise PixelDelta by 10.
+        assert_eq!(classify_wheel(0.3), WheelInput::Pixel(3.0));
+        assert_eq!(classify_wheel(4.0), WheelInput::Pixel(40.0));
+    }
+
+    #[test]
+    fn notch_conversion_treats_40px_as_one_notch() {
+        assert_eq!(to_notches(50.0), 1.0);
+        assert_eq!(to_notches(-150.0), -3.0);
+        assert_eq!(to_notches(4.0), 1.0);
+        assert!((to_notches(2.0) - 0.5).abs() < 1e-4);
+    }
+
+    #[test]
+    fn precise_ctrl_scroll_zooms_like_a_notch() {
+        let mut wheel = WheelState::default();
+        // 40 px of precise scrolling == one notch == one zoom step.
+        assert_eq!(
+            wheel.resolve(0.0, 4.0, mods(true, false), PX_PER_IMAGE, 8.0),
+            Some(WheelAction::Zoom(1))
+        );
+    }
+
+    #[test]
+    fn one_line_notch_is_one_image() {
         let mut wheel = WheelState::default();
         assert_eq!(
-            wheel.resolve(0.0, -10.0, mods(false, false), NAV_THRESHOLD),
+            wheel.resolve(0.0, -50.0, mods(false, false), PX_PER_IMAGE, 0.0),
             Some(WheelAction::NextImage)
         );
         assert_eq!(
-            wheel.resolve(0.0, 10.0, mods(false, false), NAV_THRESHOLD),
+            wheel.resolve(0.0, 50.0, mods(false, false), PX_PER_IMAGE, 0.0),
             Some(WheelAction::PrevImage)
+        );
+        // Three notches at once must not skip three images.
+        assert_eq!(
+            wheel.resolve(0.0, -150.0, mods(false, false), PX_PER_IMAGE, 0.0),
+            Some(WheelAction::NextImage)
         );
     }
 
     #[test]
-    fn tiny_scroll_steps_still_accumulate() {
-        // A very smooth driver sends 2 per event; ten of them must switch once,
-        // not ten times.
+    fn precise_scrolling_switches_after_enough_pixels() {
+        // 10 px per event as a smooth scrolling mouse would send them; 30 px is
+        // one image, so three events are needed.
         let mut wheel = WheelState::default();
-        let mut switched = 0;
-        for _ in 0..10 {
-            if wheel.resolve(0.0, -2.0, mods(false, false), NAV_THRESHOLD).is_some() {
-                switched += 1;
-            }
-        }
-        assert_eq!(switched, 2, "10 * 2 with a threshold of 10 switches twice");
+        assert_eq!(wheel.resolve(0.0, -1.0, mods(false, false), PX_PER_IMAGE, 8.0), None);
+        assert_eq!(wheel.resolve(0.0, -1.0, mods(false, false), PX_PER_IMAGE, 8.0), None);
+        assert_eq!(
+            wheel.resolve(0.0, -1.0, mods(false, false), PX_PER_IMAGE, 8.0),
+            Some(WheelAction::NextImage)
+        );
     }
 
     #[test]
-    fn higher_sensitivity_lowers_the_threshold() {
+    fn a_huge_event_switches_only_one_image() {
+        // A fast flick can report a couple of hundred pixels in one event; it
+        // must switch once and not bank the overshoot for the next events.
         let mut wheel = WheelState::default();
-        // Sensitivity 5 => threshold 2, so a single tiny event switches.
         assert_eq!(
-            wheel.resolve(0.0, -2.0, mods(false, false), NAV_THRESHOLD / 5.0),
+            wheel.resolve(0.0, -30.0, mods(false, false), PX_PER_IMAGE, 8.0),
+            Some(WheelAction::NextImage)
+        );
+        // The next tiny event starts from zero again.
+        assert_eq!(wheel.resolve(0.0, -0.1, mods(false, false), PX_PER_IMAGE, 8.0), None);
+    }
+
+    #[test]
+    fn a_pause_starts_a_new_gesture() {
+        let mut wheel = WheelState::default();
+        // 20 px banked, then the user pauses and scrolls 20 px again: without a
+        // reset the second gesture would inherit the leftovers.
+        assert_eq!(wheel.resolve(0.0, -2.0, mods(false, false), PX_PER_IMAGE, 8.0), None);
+        assert_eq!(
+            wheel.resolve(0.0, -2.0, mods(false, false), PX_PER_IMAGE, GESTURE_GAP_MS + 50.0),
+            None,
+            "the bank must be dropped after a pause"
+        );
+        assert_eq!(
+            wheel.resolve(0.0, -2.0, mods(false, false), PX_PER_IMAGE, 8.0),
+            Some(WheelAction::NextImage)
+        );
+    }
+
+    #[test]
+    fn sensitivity_divides_the_pixel_threshold() {
+        let mut wheel = WheelState::default();
+        // Sensitivity 3 => 10 px per image, so one 12 px event switches.
+        assert_eq!(
+            wheel.resolve(0.0, -1.2, mods(false, false), PX_PER_IMAGE / 3.0, 8.0),
             Some(WheelAction::NextImage)
         );
     }
@@ -437,7 +582,7 @@ mod tests {
     fn modifier_precedence_shift_wins() {
         let mut wheel = WheelState::default();
         assert_eq!(
-            wheel.resolve(0.0, 50.0, mods(true, true), NAV_THRESHOLD),
+            wheel.resolve(0.0, 50.0, mods(true, true), PX_PER_IMAGE, 8.0),
             Some(WheelAction::RotateCw)
         );
     }
@@ -446,11 +591,11 @@ mod tests {
     fn ctrl_wheel_zooms() {
         let mut wheel = WheelState::default();
         assert_eq!(
-            wheel.resolve(0.0, 50.0, mods(true, false), NAV_THRESHOLD),
+            wheel.resolve(0.0, 50.0, mods(true, false), PX_PER_IMAGE, 8.0),
             Some(WheelAction::Zoom(1))
         );
         assert_eq!(
-            wheel.resolve(0.0, -50.0, mods(true, false), NAV_THRESHOLD),
+            wheel.resolve(0.0, -50.0, mods(true, false), PX_PER_IMAGE, 8.0),
             Some(WheelAction::Zoom(-1))
         );
     }
@@ -459,22 +604,22 @@ mod tests {
     fn plain_wheel_navigates_one_image_per_event() {
         let mut wheel = WheelState::default();
         assert_eq!(
-            wheel.resolve(0.0, 50.0, mods(false, false), NAV_THRESHOLD),
+            wheel.resolve(0.0, 50.0, mods(false, false), PX_PER_IMAGE, 8.0),
             Some(WheelAction::PrevImage)
         );
         assert_eq!(
-            wheel.resolve(0.0, -200.0, mods(false, false), NAV_THRESHOLD),
+            wheel.resolve(0.0, -200.0, mods(false, false), PX_PER_IMAGE, 8.0),
             Some(WheelAction::NextImage)
         );
         // A huge delta must not skip several images.
-        assert_eq!(wheel.resolve(0.0, -1000.0, mods(false, false), NAV_THRESHOLD), Some(WheelAction::NextImage));
+        assert_eq!(wheel.resolve(0.0, -1000.0, mods(false, false), PX_PER_IMAGE, 8.0), Some(WheelAction::NextImage));
     }
 
     #[test]
     fn shift_wheel_rotates_even_when_macos_swaps_the_axis() {
         let mut wheel = WheelState::default();
         assert_eq!(
-            wheel.resolve(-50.0, 0.0, mods(false, true), NAV_THRESHOLD),
+            wheel.resolve(-50.0, 0.0, mods(false, true), PX_PER_IMAGE, 8.0),
             Some(WheelAction::RotateCcw)
         );
     }
@@ -520,6 +665,111 @@ mod tests {
         let (w, h) = diagonal.aabb(200.0, 100.0);
         let expected = (200.0 + 100.0) * std::f32::consts::FRAC_1_SQRT_2;
         assert!((w - expected).abs() < 1e-3 && (h - expected).abs() < 1e-3);
+    }
+
+    /// Where an image pixel lands on screen for a given offset/scale.
+    fn screen_of(
+        view: &ViewTransform,
+        x_img: (f32, f32),
+        scale: f32,
+        offset: (f32, f32),
+        dims: (f32, f32),
+    ) -> (f32, f32) {
+        let pivot = (
+            offset.0 + dims.0 * scale / 2.0,
+            offset.1 + dims.1 * scale / 2.0,
+        );
+        let p = view
+            .matrix(scale, offset, pivot)
+            .transform_point2(vec2(x_img.0, x_img.1));
+        (p.x, p.y)
+    }
+
+    #[test]
+    fn panning_is_a_pure_screen_translation() {
+        // The rotation is applied around the image centre, which moves with the
+        // offset, so dragging must translate the picture by exactly the drag
+        // vector in window axes - never along a rotated axis.
+        let dims = (400.0, 260.0);
+        let scale = 1.35;
+        for angle in [0.0, 23.0, 90.0, -137.0] {
+            for mirror_x in [false, true] {
+                let view = ViewTransform { angle_deg: angle, mirror_x };
+                let before = view.matrix(
+                    scale,
+                    (12.0, -7.0),
+                    (12.0 + dims.0 * scale / 2.0, -7.0 + dims.1 * scale / 2.0),
+                );
+                let after = view.matrix(
+                    scale,
+                    (42.5, 18.0),
+                    (42.5 + dims.0 * scale / 2.0, 18.0 + dims.1 * scale / 2.0),
+                );
+                for x in [(0.0, 0.0), (200.0, 130.0), (399.0, 259.0)] {
+                    let a = before.transform_point2(vec2(x.0, x.1));
+                    let b = after.transform_point2(vec2(x.0, x.1));
+                    assert!(
+                        (b.x - a.x - 30.5).abs() < 1e-3 && (b.y - a.y - 25.0).abs() < 1e-3,
+                        "angle {angle} mirror {mirror_x}: drag moved the image by {:?}",
+                        (b.x - a.x, b.y - a.y)
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn zooming_keeps_the_pixel_under_the_cursor() {
+        let dims = (640.0, 480.0);
+        for angle in [0.0, 37.0, 90.0, -122.5] {
+            for mirror_x in [false, true] {
+                let view = ViewTransform { angle_deg: angle, mirror_x };
+                let scale = 1.4;
+                let offset = (90.0, 55.0);
+                let cursor = (310.0, 260.0);
+
+                // Image pixel under the cursor before zooming.
+                let pivot = (
+                    offset.0 + dims.0 * scale / 2.0,
+                    offset.1 + dims.1 * scale / 2.0,
+                );
+                let before = view.matrix(scale, offset, pivot);
+                let x_img = before.inverse().transform_point2(vec2(cursor.0, cursor.1));
+
+                // Same formula as utils::scale_pt.
+                let delta = 0.35 * scale;
+                let offset_after = (
+                    offset.0 - (cursor.0 - offset.0) * delta / scale,
+                    offset.1 - (cursor.1 - offset.1) * delta / scale,
+                );
+                let got = screen_of(
+                    &view,
+                    (x_img.x, x_img.y),
+                    scale + delta,
+                    offset_after,
+                    dims,
+                );
+                assert!(
+                    (got.0 - cursor.0).abs() < 1e-2 && (got.1 - cursor.1).abs() < 1e-2,
+                    "angle {angle} mirror {mirror_x}: pixel drifted to {got:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn view_space_matrix_ignores_scale_and_offset() {
+        let view = ViewTransform {
+            angle_deg: 90.0,
+            mirror_x: false,
+        };
+        let m = view.view_space_matrix((100.0, 100.0));
+        let centre = m.transform_point2(vec2(100.0, 100.0));
+        assert!((centre.x - 100.0).abs() < 1e-3 && (centre.y - 100.0).abs() < 1e-3);
+        // 10 px right of the centre becomes 10 px below it for a 90 degree turn
+        let p = m.transform_point2(vec2(110.0, 100.0));
+        assert!((p.x - 100.0).abs() < 1e-3, "{p:?}");
+        assert!((p.y - 110.0).abs() < 1e-3, "{p:?}");
     }
 
     #[test]

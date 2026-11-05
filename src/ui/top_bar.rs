@@ -318,14 +318,10 @@ pub fn draw_hamburger_menu(ui: &mut Ui, state: &mut OculanteState, app: &mut App
             }
 
             if ui.styled_button(format!("{FRAME} View 1:1")).clicked() {
-                set_zoom(
-                    1.0,
-                    Some(nalgebra::Vector2::new(
-                        app.window().width() as f32 / 2.,
-                        app.window().height() as f32 / 2.,
-                    )),
-                    state,
-                );
+                // Coming from the menu the pointer is somewhere else entirely,
+                // so zoom towards the image centre instead of the cursor.
+                let pivot = state.view_pivot();
+                set_zoom(1.0, Some(pivot), state);
                 ui.close_menu();
             }
 

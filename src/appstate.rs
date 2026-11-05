@@ -13,7 +13,7 @@ use crate::{
 use egui_notify::Toasts;
 use image::DynamicImage;
 use nalgebra::Vector2;
-use notan::math::Mat3;
+use notan::math::{Mat3, Vec2};
 use notan::{prelude::Texture, AppState};
 use std::{
     path::{Path, PathBuf},
@@ -121,6 +121,8 @@ pub struct OculanteState {
     pub last_nav_at: Option<Instant>,
     /// Navigation that was dropped because of the throttle.
     pub pending_nav: i32,
+    /// Time of the previous wheel event, used to segment scroll gestures.
+    pub last_wheel_at: Option<Instant>,
     /// Throttles the "angle" and "mirrored" toasts.
     pub last_view_msg_at: Option<Instant>,
 }
@@ -185,22 +187,26 @@ impl OculanteState {
         )
     }
 
-    /// Screen point -> point in the untransformed screen frame.
+    /// Screen point -> point in the untransformed *screen* frame.
+    ///
+    /// Only rotation and mirror are undone (scale and offset are kept), which is
+    /// what hit testing needs: `pos_from_coord` divides by the scale itself.
+    /// Panning and zooming deliberately use raw screen coordinates instead.
     pub fn unview_point(&self, screen: Vector2<f32>) -> Vector2<f32> {
         let pivot = self.view_pivot();
-        let (x, y) = self.view.untransform_point(
-            (screen.x, screen.y),
-            self.image_geometry.scale,
-            (self.image_geometry.offset.x, self.image_geometry.offset.y),
-            (pivot.x, pivot.y),
-        );
-        Vector2::new(x, y)
+        let inverse = self
+            .view
+            .view_space_matrix((pivot.x, pivot.y))
+            .inverse();
+        let p = inverse.transform_point2(Vec2::new(screen.x, screen.y));
+        Vector2::new(p.x, p.y)
     }
 
-    /// Screen delta -> delta in the untransformed screen frame.
-    pub fn unview_delta(&self, delta: Vector2<f32>) -> Vector2<f32> {
-        let (x, y) = self.view.untransform_delta((delta.x, delta.y));
-        Vector2::new(x, y)
+    /// Screen point -> image pixel coordinates (undoes scale and offset as well).
+    pub fn image_from_screen(&self, screen: Vector2<f32>) -> Vector2<f32> {
+        let inverse = self.view_matrix().inverse();
+        let p = inverse.transform_point2(Vec2::new(screen.x, screen.y));
+        Vector2::new(p.x, p.y)
     }
 }
 
@@ -270,6 +276,7 @@ impl Default for OculanteState {
             middle: Default::default(),
             last_nav_at: None,
             pending_nav: 0,
+            last_wheel_at: None,
             last_view_msg_at: None,
         }
     }

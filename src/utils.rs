@@ -997,9 +997,9 @@ pub fn clipboard_to_image() -> Result<DynamicImage> {
 
 pub fn set_zoom(scale: f32, from_center: Option<Vector2<f32>>, state: &mut OculanteState) {
     let delta = scale - state.image_geometry.scale;
-    // The anchor must live in the untransformed frame, otherwise a rotated or
-    // mirrored image zooms towards the wrong place.
-    let zoom_point = state.unview_point(from_center.unwrap_or(state.cursor));
+    // The offset is a plain screen space translation: rotation and mirroring
+    // happen around the image centre, so the anchor stays the raw screen point.
+    let zoom_point = from_center.unwrap_or(state.cursor);
     state.image_geometry.offset -= scale_pt(
         state.image_geometry.offset,
         zoom_point,
@@ -1011,12 +1011,11 @@ pub fn set_zoom(scale: f32, from_center: Option<Vector2<f32>>, state: &mut Ocula
 
 /// Zoom by `delta`, keeping the point under `anchor_screen` in place.
 pub fn zoom_at(delta: f32, anchor_screen: Vector2<f32>, state: &mut OculanteState) {
-    let anchor = state.unview_point(anchor_screen);
     let new_scale = state.image_geometry.scale + delta;
     if new_scale > gestures::ZOOM_MIN && new_scale < gestures::ZOOM_MAX {
         state.image_geometry.offset -= scale_pt(
             state.image_geometry.offset,
-            anchor,
+            anchor_screen,
             state.image_geometry.scale,
             delta,
         );

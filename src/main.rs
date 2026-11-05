@@ -363,19 +363,19 @@ fn process_events(app: &mut App, state: &mut OculanteState, evt: Event) {
             // pan image with keyboard
             let delta = 40.;
             if key_pressed(app, state, PanRight) {
-                state.image_geometry.offset += state.unview_delta(Vector2::new(-delta, 0.0));
+                state.image_geometry.offset.x -= delta;
                 limit_offset(app, state);
             }
             if key_pressed(app, state, PanUp) {
-                state.image_geometry.offset += state.unview_delta(Vector2::new(0.0, delta));
+                state.image_geometry.offset.y += delta;
                 limit_offset(app, state);
             }
             if key_pressed(app, state, PanLeft) {
-                state.image_geometry.offset += state.unview_delta(Vector2::new(delta, 0.0));
+                state.image_geometry.offset.x += delta;
                 limit_offset(app, state);
             }
             if key_pressed(app, state, PanDown) {
-                state.image_geometry.offset += state.unview_delta(Vector2::new(0.0, -delta));
+                state.image_geometry.offset.y -= delta;
                 limit_offset(app, state);
             }
             if key_pressed(app, state, CompareNext) {
@@ -580,8 +580,17 @@ fn process_events(app: &mut App, state: &mut OculanteState, evt: Event) {
             } else {
                 1.0
             };
-            let nav_threshold = gestures::NAV_THRESHOLD / sensitivity;
-            match state.wheel.resolve(delta_x, delta_y, mods, nav_threshold) {
+            let nav_px = gestures::PX_PER_IMAGE / sensitivity;
+
+            // Wheel events arrive in bursts; a pause starts a new gesture so
+            // leftovers from the previous scroll do not have to be scrolled off.
+            let now = Instant::now();
+            let gap_ms = state
+                .last_wheel_at
+                .map_or(f32::INFINITY, |t| now.duration_since(t).as_secs_f32() * 1000.0);
+            state.last_wheel_at = Some(now);
+
+            match state.wheel.resolve(delta_x, delta_y, mods, nav_px, gap_ms) {
                 Some(WheelAction::PrevImage) => navigate(state, -1),
                 Some(WheelAction::NextImage) => navigate(state, 1),
                 Some(WheelAction::Zoom(notches)) => {
@@ -719,8 +728,10 @@ fn update(app: &mut App, state: &mut OculanteState) {
     // Left button pans, transformed so that the image follows the cursor even
     // when it is rotated or mirrored.
     if state.drag_enabled && !state.mouse_grab {
-        let delta = state.unview_delta(state.mouse_delta);
-        state.image_geometry.offset += delta;
+        // Plain screen space translation: the image follows the cursor exactly,
+        // even when it is rotated or mirrored, because both transforms happen
+        // around the (moving) image centre and therefore cancel out here.
+        state.image_geometry.offset += state.mouse_delta;
         limit_offset(app, state);
     }
 
@@ -782,7 +793,10 @@ fn update(app: &mut App, state: &mut OculanteState) {
         state.image_geometry.dimensions = dimensions;
     }
 
-    if state.persistent_settings.info_enabled || state.edit_state.painting {
+    if (state.persistent_settings.info_enabled || state.edit_state.painting)
+        && state.image_geometry.dimensions.0 > 0
+        && state.image_geometry.dimensions.1 > 0
+    {
         // Hit testing happens in the untransformed frame so that the info panel
         // reports the pixel that is actually under the cursor.
         state.cursor_relative = pos_from_coord(
@@ -1432,25 +1446,33 @@ fn drawe(app: &mut App, gfx: &mut Graphics, plugins: &mut Plugins, state: &mut O
     gfx.render(&egui_output);
 }
 
-// Make sure offset is restricted to window size so we don't offset to infinity
+// Keep the image inside the window.
+//
+// The rotation and the mirror are applied around the image centre, so the on
+// screen bounding box of the image is an axis aligned box around that centre.
+// Clamping the *centre* keeps the limits aligned with the window, which is what
+// makes dragging feel right even when the image is rotated by an odd angle.
 fn limit_offset(app: &mut App, state: &mut OculanteState) {
-    let window_size = app.window().size();
-    // Use the rotated bounding box, otherwise the corners of a rotated image
-    // can not be reached.
+    let window = app.window().size();
     let scaled = state.image_dims_f() * state.image_geometry.scale;
-    let (scaled_w, scaled_h) = state.view.aabb(scaled.x, scaled.y);
-    state.image_geometry.offset.x = state
-        .image_geometry
-        .offset
-        .x
-        .min(window_size.0 as f32)
-        .max(-scaled_w);
-    state.image_geometry.offset.y = state
-        .image_geometry
-        .offset
-        .y
-        .min(window_size.1 as f32)
-        .max(-scaled_h);
+    let (aabb_w, aabb_h) = state.view.aabb(scaled.x, scaled.y);
+    let half = scaled / 2.0;
+    let mut pivot = state.image_geometry.offset + half;
+
+    let clamp_axis = |value: f32, aabb: f32, window: f32| {
+        // When the image is smaller than the window the two limits cross over;
+        // keep it fully visible instead.
+        let (lo, hi) = if aabb < window {
+            (aabb / 2.0, window - aabb / 2.0)
+        } else {
+            (window - aabb / 2.0, aabb / 2.0)
+        };
+        value.clamp(lo.min(hi), hi.max(lo))
+    };
+
+    pivot.x = clamp_axis(pivot.x, aabb_w, window.0 as f32);
+    pivot.y = clamp_axis(pivot.y, aabb_h, window.1 as f32);
+    state.image_geometry.offset = pivot - half;
 }
 
 /// Minimum time between two image switches driven by the wheel.
