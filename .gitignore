@@ -18,3 +18,4 @@ icon.ico
 # local build helpers / artifacts
 input-remap.patch
 target/
+dist/

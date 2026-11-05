@@ -23,6 +23,8 @@
 | T10 | 禁用 `ClearImage`（4 处） | `grep -rn "ClearImage" src/` 只剩枚举/过滤 | ✅ |
 | T11 | 文档（README/CHANGELOG）+ patch 导出 | `git diff --stat` + patch 文件存在 | ✅ |
 | T12 | `cargo build --release` + 验收清单 | `target/release/oculante` 可运行 | ✅ |
+| T13 | macOS `.app` 打包脚本与产物 | `dist/Oculante.app` 可 `open` 启动 | ✅ |
+| T14 | 升级用变更日志 + 方法论文档 | `docs/MOD_CHANGELOG.md`、`docs/MOD_WORKFLOW.md` | ✅ |
 
 状态图例：☐ 未开始 / ▶ 进行中 / ✅ 完成 / ⚠ 阻塞（必须在下方"阻塞记录"写原因）
 
@@ -167,6 +169,10 @@ cargo build --release
 | 方案规格 | `oculante/docs/INPUT_REMAP_PLAN.md` |
 | 本排程 | `oculante/docs/IMPLEMENTATION_SCHEDULE.md` |
 | 便携 cmake | `应用mod/tools/cmake-3.31.6-macos-universal/`（240 MB，可整目录删除） |
+| macOS 应用 | `oculante/dist/Oculante.app`、`oculante/dist/Oculante-<ver>.zip` |
+| 打包脚本 | `oculante/scripts/make_macos_app.sh` + `oculante/packaging/macos/Info.plist` |
+| 升级变更日志 | `oculante/docs/MOD_CHANGELOG.md` |
+| 方法论 | `oculante/docs/MOD_WORKFLOW.md` |
 
 本地运行：
 
