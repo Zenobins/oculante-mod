@@ -255,6 +255,12 @@ open .app / 双击图片
 
 窗口进程（带 `-c` 参数）**不安装**任何 delegate，也不进入助手逻辑。
 
+补充三条实测经验：
+
+- 单文件是 `application:openFile:`，**多文件是 `application:openFiles:`（复数）**，两个都要接。
+- 多文件事件要在 250ms 内合并，再一次性传给一个窗口（路径作为多个位置参数），否则"全选打开"会起 N 个进程。
+- `mac.rs` 自己的 clap 也要允许 `INPUT` 多值，否则带多个路径的子进程会在 clap 处**静默退出**（日志里只有一行 usage，看起来像"没反应"）。
+
 ### 新增窗口的接线
 
 `InputEvent::NewWindow`（默认 ⌘/Ctrl+N）→ `spawn_new_instance()` → 成功给 toast、失败给错误 toast。

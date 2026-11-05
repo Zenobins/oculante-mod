@@ -1,3 +1,7 @@
+// The objc macros used by the macOS integration test
+// `cfg(feature = "cargo-clippy")`, which this crate does not define.
+#![allow(unexpected_cfgs)]
+
 pub mod appstate;
 pub mod cache;
 pub mod comparelist;

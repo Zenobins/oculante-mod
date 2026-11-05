@@ -237,7 +237,13 @@ M = Mirror(pivot) * R(pivot) * T(offset) * S(scale)
 | 运行中再双击 .app | 新增 1 个窗口（日志 `Reopen requested`） |
 | 关掉所有窗口 | 助手在 ~3s 内退出，无残留进程 |
 
-**安全边界**：`unsafe` 只集中在 `install_reopen_handler`；delegate 为空时只 warn 不崩；`class_addMethod` 返回 false（方法已存在）时直接返回；闭包只捕获 `Arc<Mutex<Vec<Child>>>`，在 AppKit 主线程调用。
+**多选打开（Open With 选一堆图）**：
+
+- AppKit 对"一次打开多个文档"调用的是 **`application:openFiles:`（复数）**，不是逐个 `openFile:`；fruitbasket 也没提供它 → 同样用 `class_addMethod` 注入，签名编码 `v@:@@`，从 `NSArray<NSString*>` 里取路径。
+- 事件会集中 250ms（`BATCH_WINDOW`）后再开窗口：**一个窗口带上全部文件路径**（app 的 `INPUT` 本来就支持多个值，会一起进 scrubber），避免"选 50 张图 → 起 50 个进程"。
+- 追加一个隐藏坑：`src/mac.rs` 自己的 clap 里 `INPUT` 原本没有 `multiple_values`，导致"多参数子进程"在**日志里只留一行 clap 报错就静默退出**（表现为"没反应"）。已补上。
+
+**安全边界**：`unsafe` 只集中在 `install_delegate_handlers`；delegate 为空时只 warn 不崩；`class_addMethod` 返回 false（方法已存在）时直接返回；两处 ObjC 回调都用 `catch_unwind` 包住，绝不让 panic 穿过 FFI；闭包只捕获 `Arc<Mutex<..>>`，在 AppKit 主线程调用。
 
 ---
 
