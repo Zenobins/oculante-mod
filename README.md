@@ -6,6 +6,7 @@
 > | 本仓库 | **oculante-mod** — 分支 `feat/input-remap` |
 > | 差异一览 | <https://github.com/Zenobins/oculante-mod/compare/master...feat/input-remap> |
 > | 完整变更日志 | [`docs/MOD_CHANGELOG.md`](docs/MOD_CHANGELOG.md)（逐条"上游原实现 → 本地实现"，附上游升级流程） |
+> | 构建/推送/排障 | [`HANDOFF.md`](HANDOFF.md)（账号、远端、Git 规范、发布与排障手册） |
 > | 输入映射总表 | 见下方 [Mouse & keyboard (local fork)](#mouse--keyboard-local-fork) |
 >
 > **改了什么**：只动输入映射 + 禁用 `ClearImage` + 支持多窗口，没有改解码 / 编辑 / 文件写入逻辑；旋转与镜像都是**仅显示**，不写盘。

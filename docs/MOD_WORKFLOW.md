@@ -361,10 +361,11 @@ git diff master..HEAD > input-remap.patch
 
 再次接手时的顺序：
 
-1. `docs/README.md`（索引 + 当前状态）
-2. `docs/MOD_CHANGELOG.md §4`（上游升级流程）；若只是小改，读 §2 对应条目
-3. `docs/MOD_WORKFLOW.md §4`（文档驱动流程）与 §8（改完先审查再编译）
-4. 环境：`export PATH=".../tools/cmake-3.31.6-macos-universal/CMake.app/Contents/bin:$PATH"`
+1. `HANDOFF.md`（账号/远端/Git 规范/发布/排障）
+2. `docs/README.md`（索引 + 当前状态）
+3. `docs/MOD_CHANGELOG.md §4`（上游升级流程）；若只是小改，读 §2 对应条目
+4. `docs/MOD_WORKFLOW.md §4`（文档驱动流程）与 §8（改完先审查再编译）
+5. 环境：`export PATH=".../tools/cmake-3.31.6-macos-universal/CMake.app/Contents/bin:$PATH"`
 
 **已知边界（不是 bug）**：
 
