@@ -61,6 +61,7 @@
 | 源码分支 | `feat/input-remap`，19 个功能与修复提交（另有文档提交） |
 | 应用 | `dist/Oculante.app`，版本 `0.9.6-mod.20261106-0229` |
 | 分享包 | `dist/Oculante-0.9.6-mod-20261106-0229.zip`（17 MB） |
+| Release | <https://github.com/Zenobins/oculante-mod/releases/tag/v0.9.6-mod.20261106-0229>（**仅 macOS 资产**） |
 | 补丁 | `input-remap.patch`（`git diff master..HEAD`，未入库） |
 | 二进制 | `target/release/oculante`，30 MB，sha256 前缀 `0a2f6efb`，无 Homebrew 依赖 |
 
@@ -133,7 +134,40 @@ curl -s https://raw.githubusercontent.com/Zenobins/oculante-mod/feat/input-remap
 
 > 坑：`contents` 接口默认取**默认分支**；路径在当前分支不存在时会 404，不是文件丢了。
 
-### 3.4 PR / Release（需要时）
+### 3.4 发版（Release 只放 macOS 资产）
+
+发版流程（已用过一次，可照抄）：
+
+```bash
+cd ~/oculante
+# 1) 先更新 docs/RELEASE_NOTES.md（新增一个 "## v<ver>-mod.<stamp>" 小节）
+git add -A && git commit -m "docs: release notes for <ver>"
+rm -f input-remap.patch && git diff master..HEAD > input-remap.patch
+
+# 2) 打标签并推送
+git tag -a "v<ver>-mod.<stamp>" -m "oculante-mod <ver> (macOS)"
+git push fork feat/input-remap "v<ver>-mod.<stamp>"
+
+# 3) 用发布说明当 release body（截取该版本小节）
+mkdir -p target
+{ echo '> **仅 macOS 构建**（Apple Silicon / macOS 11+）。'; echo; \
+  sed -n '/^## v<ver>-mod/,$p' docs/RELEASE_NOTES.md; } > target/release-body.md
+
+# 4) 建 release：只挂 zip + patch，不要放 Windows/Linux 产物
+gh release create "v<ver>-mod.<stamp>" \
+  dist/Oculante-<ver>-mod-<stamp>.zip input-remap.patch \
+  --repo Zenobins/oculante-mod \
+  --title "<ver>-mod.<stamp> · macOS" \
+  --notes-file target/release-body.md
+```
+
+约定：
+
+- **只发 macOS**（`.app` 只在这台机器上测过）；Windows/Linux 让用户用上游官方包。
+- Release 说明必须包含：下载表、安装步骤（含 Gatekeeper 处理）、**与上游的用法差异**、已知限制、sha256。
+- 大文件不进 git，一律走 Release 附件。
+
+### 3.5 其它 gh 操作（PR 等）
 
 ```bash
 # 从 fork 向上游开 PR（本仓库未开，上游处于 maintenance mode）

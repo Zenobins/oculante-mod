@@ -2,6 +2,7 @@
 
 > 本仓库只发布 **macOS** 构建。Windows / Linux 未做测试，也没有预编译产物，请使用上游的官方发布。
 > 完整改动清单见 [`docs/MOD_CHANGELOG.md`](MOD_CHANGELOG.md)，这里是给使用者的简短版本。
+> 发布页：<https://github.com/Zenobins/oculante-mod/releases>
 
 ---
 
