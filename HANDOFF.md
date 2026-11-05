@@ -257,6 +257,7 @@ cargo build --release          # 首次 ~11 分钟，增量 3~6 分钟（lto = "
 | `docs/MOD_CHANGELOG.md` | 逐项改动（M1–M12）、上游对照、升级流程、版本历史 | 每次代码改动；新增一节 M<n> 并更新版本历史 |
 | `docs/MOD_WORKFLOW.md` | 方法论、工具链、几何模型、macOS 输入栈、坑 | 工具链变化、发现新坑、流程调整 |
 | `docs/IMPLEMENTATION_SCHEDULE.md` | 任务卡、硬门禁、阻塞、交付物、验收记录 | 新任务/新阻塞/交付物或版本号变化 |
+| `docs/RELEASE_NOTES.md` | 使用者视角的发布说明（下载/安装/差异/校验值） | 每次发版 |
 | `docs/README.md` | 文档索引 + 当前状态头 | 新增/重命名文档、产出版本变化 |
 | `README.md`（仓库根） | 面向访客的 mod 说明 + 输入映射表 | 映射表变化、新增/删除文件、差异链接变化 |
 | `CHANGELOG.md`（仓库根） | 面向用户的一句话变更 | 每次发布 |
@@ -274,7 +275,7 @@ cargo build --release          # 首次 ~11 分钟，增量 3~6 分钟（lto = "
 
 **可选待办**
 
-1. 在 fork 上发 Release（附 zip + patch），方便直接下载。
+1. ~~在 fork 上发 Release~~ 已完成（`v0.9.6-mod.20261106-0229`，仅 macOS 资产）；后续发版按 §3.4 的命令，发布说明写进 `docs/RELEASE_NOTES.md`。
 2. 上游若发新版（尤其 notan/winit 升级），按 `MOD_CHANGELOG.md §4` 走一遍并回归 9 项验收。
 3. Windows/Linux 回归：`classify_wheel` 的量纲常量是按 macOS 实测定的，其它平台可能需要微调。
 4. 手势可配置化：目前只有"滚轮灵敏度"进设置，其余是常量。

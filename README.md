@@ -7,16 +7,36 @@
 > | 差异一览 | <https://github.com/Zenobins/oculante-mod/compare/master...feat/input-remap> |
 > | 完整变更日志 | [`docs/MOD_CHANGELOG.md`](docs/MOD_CHANGELOG.md)（逐条"上游原实现 → 本地实现"，附上游升级流程） |
 > | 构建/推送/排障 | [`HANDOFF.md`](HANDOFF.md)（账号、远端、Git 规范、发布与排障手册） |
+> | 发布说明 | [`docs/RELEASE_NOTES.md`](docs/RELEASE_NOTES.md)｜[Releases](https://github.com/Zenobins/oculante-mod/releases) |
 > | 输入映射总表 | 见下方 [Mouse & keyboard (local fork)](#mouse--keyboard-local-fork) |
 >
-> **改了什么**：只动输入映射 + 禁用 `ClearImage` + 支持多窗口，没有改解码 / 编辑 / 文件写入逻辑；旋转与镜像都是**仅显示**，不写盘。
+> ### 下载（仅 macOS）
 >
-> - 滚轮 = 上一张/下一张；Ctrl(⌘)+滚轮 = 缩放（两者与上游对调）
-> - 右键拖拽 = 缩放；右键双击 = Always on top；左键双击 = 1:1 ↔ 自适应（全屏改回只有 `F`）
-> - 中键单击 = 水平镜像；中键拖拽 = 精密旋转；Shift+滚轮 = 90° 步进旋转（均为仅显示）
-> - `Shift+Delete`（ClearImage）已禁用，只保留进废纸篓的 `Delete`
-> - 多窗口（每窗口独立置顶）、运行中打开第二张图不再报错、再次双击 App 开新窗口
-> - 附 macOS `.app` 打包脚本
+> [**Releases**](https://github.com/Zenobins/oculante-mod/releases) → `Oculante-0.9.6-mod.<构建戳>.zip`
+> 只发布 **macOS（Apple Silicon，macOS 11+）** 构建；Windows / Linux 未测试，请用上游官方发布。
+> 未签名/未公证，首次打开若被拦：右键 →「打开」，或 `xattr -dr com.apple.quarantine /Applications/Oculante.app`。
+>
+> ### 与上游的用法差异（只改输入 + 多窗口，没动解码/编辑/写盘逻辑）
+>
+> | 操作 | 上游 v0.9.6 | 本 mod |
+> |---|---|---|
+> | 滚轮 | 缩放 | **上一张 / 下一张**（经典滚轮一格一张；触控板/平滑鼠标每 30px 一张，灵敏度可调） |
+> | Ctrl (⌘) + 滚轮 | 上一张 / 下一张 | **缩放**（锚点跟随光标，旋转/镜像后也准） |
+> | 左键双击 | 全屏 | **1:1 ↔ 自适应窗口**（全屏只剩 `F` / 顶栏按钮） |
+> | 右键拖拽 | 无 | **缩放**（上拖放大，下拖缩小） |
+> | 右键双击 | 无 | **Always on top 开关** |
+> | 中键单击 | 无 | **水平镜像**（仅显示，再点取消） |
+> | 中键拖拽 | 平移 | **精密旋转**（0.2°/px，Shift 精密档；左上角显示角度） |
+> | Shift + 滚轮 | 无 | **90° 步进旋转**（仅显示） |
+> | Shift + Delete | 清空图片（ClearImage） | **已禁用**；`Delete` 仍然只进废纸篓 |
+> | 菜单 View 1:1 | 以窗口中心缩放 | 以**图像中心**缩放（双击仍以光标为锚点） |
+> | 多窗口 | 单窗口 | **多开，每窗口独立图片/缩放/置顶**；`⌘N` 新开一个 |
+> | 应用运行中打开另一张图 | 报错 "cannot open files in the Image format" | 正常开新窗口 |
+> | 再次双击 .app | 只激活旧窗口 | 打开新窗口 |
+> | 一次打开多个文件 | — | 合并到**一个窗口**（多张进浏览序列） |
+>
+> 旋转/镜像都是**仅显示**：不写盘、切图即复位、编辑模式下禁用。
+> 输入映射全表见下方 [Mouse & keyboard (local fork)](#mouse--keyboard-local-fork)；完整差异见 [`docs/RELEASE_NOTES.md`](docs/RELEASE_NOTES.md)。
 >
 > **相对上游新增的文件**
 >
@@ -28,6 +48,7 @@
 > | `docs/INPUT_REMAP_PLAN.md` | 需求规格、几何不变量、风险清单 |
 > | `docs/IMPLEMENTATION_SCHEDULE.md` | 执行台账、硬门禁、验收记录 |
 > | `docs/README.md` | 文档索引 |
+> | `docs/RELEASE_NOTES.md` | 面向使用者的发布说明（下载/安装/差异/校验值） |
 > | `packaging/macos/Info.plist` | `.app` 的 plist 模板 |
 > | `scripts/make_macos_app.sh` | 一键构建 `Oculante.app` |
 >
