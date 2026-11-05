@@ -25,6 +25,7 @@ fi
 
 VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
 BUILD="$(date +%Y%m%d.%H%M%S)"
+STAMP="$(date +%Y%m%d-%H%M)"
 
 # ---------------------------------------------------------------------------
 # bundle skeleton
@@ -51,7 +52,9 @@ rm -rf "$ICONSET"
 # ---------------------------------------------------------------------------
 # Info.plist
 # ---------------------------------------------------------------------------
-sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" \
+# The version carries the build stamp so Finder > Get Info tells the builds
+# apart (a rebuild has the same Cargo version otherwise).
+sed -e "s/__VERSION__/${VERSION}-mod.${STAMP}/" -e "s/__BUILD__/$BUILD/" \
   packaging/macos/Info.plist > "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
@@ -63,12 +66,14 @@ codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || \
 # ---------------------------------------------------------------------------
 # zip for sharing (keeps the bundle structure and the signature)
 # ---------------------------------------------------------------------------
-ZIP="dist/Oculante-${VERSION}.zip"
+ZIP="dist/Oculante-${VERSION}-mod-${STAMP}.zip"
 rm -f "$ZIP"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
 
 echo "app: $APP"
 echo "zip: $ZIP"
+echo "version: $VERSION (build $BUILD)"
+echo "source binary: $(shasum -a 256 "$BIN" | cut -c1-16)  $(stat -f '%Sm' -t '%Y-%m-%d %H:%M' "$BIN")"
 echo
 echo "linked libraries outside the system:"
 if otool -L "$APP/Contents/MacOS/oculante" | grep -E '/opt/homebrew|/usr/local'; then

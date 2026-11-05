@@ -1685,3 +1685,19 @@ fn piped_paths(
     });
     Some(receiver)
 }
+
+#[cfg(test)]
+mod new_window_tests {
+    use super::bundle_root;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn finds_the_bundle_root() {
+        assert_eq!(
+            bundle_root(Path::new("/Applications/Oculante.app/Contents/MacOS/oculante")),
+            Some(PathBuf::from("/Applications/Oculante.app"))
+        );
+        assert_eq!(bundle_root(Path::new("/usr/local/bin/oculante")), None);
+        assert_eq!(bundle_root(Path::new("/tmp/x.app/oculante")), Some(PathBuf::from("/tmp/x.app")));
+    }
+}
