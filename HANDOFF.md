@@ -14,7 +14,7 @@
 | 结论 | 只改输入映射 + 禁用 ClearImage；旋转与镜像**仅显示不写盘**；多窗口用多进程实现 |
 | 上游 | <https://github.com/woelper/oculante>（基线 `master` @ `fdc05eb`，v0.9.6） |
 | 本仓库 | **<https://github.com/Zenobins/oculante-mod>**（公开，默认分支 `feat/input-remap`） |
-| 差异 | <https://github.com/Zenobins/oculante-mod/compare/master...feat/input-remap>（19 提交 / 24 文件，截至 2026-11-06） |
+| 差异 | <https://github.com/Zenobins/oculante-mod/compare/master...feat/input-remap>（19 个功能与修复提交 + 文档提交，实时见 compare 链接） |
 | 交付 | `dist/Oculante.app`（`0.9.6-mod.20261106-0229`）、`dist/Oculante-0.9.6-mod-20261106-0229.zip`、`input-remap.patch` |
 | 测试 | `cargo test --lib --bin oculante` → 41 + 1 全绿 |
 | 本机状态 | 已装到 `/Applications`（用户自装），多窗口、置顶独立、Finder 打开第二张图均实测通过 |
@@ -58,7 +58,7 @@
 
 | 项 | 值 |
 |---|---|
-| 源码分支 | `feat/input-remap`，19 个提交 |
+| 源码分支 | `feat/input-remap`，19 个功能与修复提交（另有文档提交） |
 | 应用 | `dist/Oculante.app`，版本 `0.9.6-mod.20261106-0229` |
 | 分享包 | `dist/Oculante-0.9.6-mod-20261106-0229.zip`（17 MB） |
 | 补丁 | `input-remap.patch`（`git diff master..HEAD`，未入库） |

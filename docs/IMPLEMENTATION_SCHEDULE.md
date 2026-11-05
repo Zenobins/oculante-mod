@@ -167,8 +167,8 @@ cargo build --release
 | 项 | 路径 |
 |---|---|
 | release 二进制 | `oculante/target/release/oculante`（约 30 MB，sha256 前缀 `0a2f6efb`） |
-| 补丁 | `oculante/input-remap.patch`（193 KB，含文档与打包脚本） |
-| 分支 | `feat/input-remap`（14 个提交，基于 `master` @ fdc05eb） |
+| 补丁 | `oculante/input-remap.patch`（220 KB，含文档与打包脚本） |
+| 分支 | `feat/input-remap`（19 个功能与修复提交 + 若干文档提交（实时数量见 compare 链接），基于 `master` @ fdc05eb） |
 | 方案规格 | `oculante/docs/INPUT_REMAP_PLAN.md` |
 | 本排程 | `oculante/docs/IMPLEMENTATION_SCHEDULE.md` |
 | 便携 cmake | `应用mod/tools/cmake-3.31.6-macos-universal/`（240 MB，可整目录删除） |
