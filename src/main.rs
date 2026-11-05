@@ -572,8 +572,15 @@ fn process_events(app: &mut App, state: &mut OculanteState, evt: Event) {
                 alt: app.keyboard.alt(),
             };
 
-            let nav_threshold =
-                gestures::NAV_THRESHOLD / state.persistent_settings.wheel_nav_sensitivity.clamp(0.2, 10.0);
+            // Older settings files may not carry the value yet; fall back to 1.0
+            // instead of a 0 that would make the wheel five times less sensitive.
+            let sensitivity = state.persistent_settings.wheel_nav_sensitivity;
+            let sensitivity = if sensitivity.is_finite() && sensitivity >= 0.2 {
+                sensitivity.min(10.0)
+            } else {
+                1.0
+            };
+            let nav_threshold = gestures::NAV_THRESHOLD / sensitivity;
             match state.wheel.resolve(delta_x, delta_y, mods, nav_threshold) {
                 Some(WheelAction::PrevImage) => navigate(state, -1),
                 Some(WheelAction::NextImage) => navigate(state, 1),

@@ -14,3 +14,7 @@ TODO
 debug.png
 .idea
 icon.ico
+
+# local build helpers / artifacts
+input-remap.patch
+target/
