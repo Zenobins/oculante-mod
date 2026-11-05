@@ -75,7 +75,7 @@
 | gh | 2.102.0（Homebrew），登录 github.com，凭据在 keyring |
 | token scopes | `gist, read:org, repo, workflow` |
 | 推送协议 | HTTPS + keyring 凭据助手（本机**没有**注册 SSH key） |
-| 提交身份 | `Zenobins <19223568+Zenobins@users.noreply.github.com>`（已写入 local + global，见 §10） |
+| 提交身份 | `Zenobins <19223568+Zenobins@users.noreply.github.com>`（已写入 local + global，见 §7.5） |
 | 重新登录 | `gh auth login --hostname github.com --git-protocol https --web` |
 | 切换账号 | `gh auth switch --user <login>` |
 
@@ -227,7 +227,7 @@ git rebase origin/master                         # 或 merge，保持"附加提�
 | `git push --force`（除明确重整自己分支且告知用户） | 同上 |
 | 提交 `dist/`、`target/`、`input-remap.patch`、`*.zip` | 体积大；已在 `.gitignore` |
 | 提交本机绝对路径 / token / 截图里的个人信息 | fork 是公开的；文档统一用 `~/oculante`、`$HOME/tools/...` |
-| 用真实邮箱提交 | 提交对象里的邮箱是明文；全局已设为 noreply（§10），别改回去 |
+| 用真实邮箱提交 | 提交对象里的邮箱是明文；全局已设为 noreply（§7.5），别改回去 |
 | 在 `master` 上提交 | 见 §4.1 |
 
 ### 4.4 提交前检查（硬门禁）
