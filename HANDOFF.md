@@ -75,6 +75,7 @@
 | gh | 2.102.0（Homebrew），登录 github.com，凭据在 keyring |
 | token scopes | `gist, read:org, repo, workflow` |
 | 推送协议 | HTTPS + keyring 凭据助手（本机**没有**注册 SSH key） |
+| 提交身份 | `Zenobins <19223568+Zenobins@users.noreply.github.com>`（已写入 local + global，见 §10） |
 | 重新登录 | `gh auth login --hostname github.com --git-protocol https --web` |
 | 切换账号 | `gh auth switch --user <login>` |
 
@@ -226,6 +227,7 @@ git rebase origin/master                         # 或 merge，保持"附加提�
 | `git push --force`（除明确重整自己分支且告知用户） | 同上 |
 | 提交 `dist/`、`target/`、`input-remap.patch`、`*.zip` | 体积大；已在 `.gitignore` |
 | 提交本机绝对路径 / token / 截图里的个人信息 | fork 是公开的；文档统一用 `~/oculante`、`$HOME/tools/...` |
+| 用真实邮箱提交 | 提交对象里的邮箱是明文；全局已设为 noreply（§10），别改回去 |
 | 在 `master` 上提交 | 见 §4.1 |
 
 ### 4.4 提交前检查（硬门禁）
@@ -302,6 +304,51 @@ cargo build --release          # 首次 ~11 分钟，增量 3~6 分钟（lto = "
 - 命令一律可直接复制；路径用 `~/` 或 `$VAR`，不写个人绝对路径。
 - 每条结论尽量带"证据"（命令、日志行、单测名），方便下一次核对。
 - 改代码同时改文档算"完成"的一部分；只改代码不改文档视为未完成。
+
+---
+
+## 7.5 隐私与邮箱（2026-11-06 已处理）
+
+**背景**：早期提交用的是真实邮箱 `little-ake@outlook.com`，它在提交对象里是明文，任何人都能读到。
+
+**已完成**：
+
+1. 提交身份改为 GitHub noreply（local + global）：
+   ```bash
+   git config user.name  "Zenobins"
+   git config user.email "19223568+Zenobins@users.noreply.github.com"
+   ```
+2. 用 `git-filter-repo` 重写历史并 force-push，覆盖本账号下**三个仓库**：
+
+   | 仓库 | 可见性 | 处理 |
+   |---|---|---|
+   | `Zenobins/oculante-mod` | 公开 | 分支 + tag 全部重写，Release 附件保留 |
+   | `Zenobins/momo-color-picker-macos` | 私有 | `master` 重写 |
+   | `Zenobins/momo-color-picker` | 公开 fork | `macos-support`、`macos-screenshots` 两个分支重写（PR #1 自动更新，截图链接靠分支名，未失效） |
+
+   校验方式（均应输出 `0`）：
+   ```bash
+   gh api "repos/Zenobins/<repo>/commits?sha=<branch>&per_page=100" \
+     --jq '[.[] | select((.commit.author.email // "") | test("little-ake"))] | length'
+   ```
+3. 本机旧对象已 `git reflog expire --expire=now --all && git gc --prune=now` 清除。
+
+**残留（git 层面做不到，需要人工）**：
+
+| 残留 | 说明 | 处理 |
+|---|---|---|
+| GitHub 旧对象缓存 | force-push 后旧提交不可达，但仍能按 SHA 访问一段时间 | 联系 GitHub Support 请求 purge 旧提交 |
+| 上游 PR `zmom0/momo-color-picker#1` | 对方仓库里的 PR 事件/旧 SHA 副本无法由我们改写 | 同上，或让作者关闭/重建 PR |
+| 本机备份 | `~/backups/oculante-mod-before-scrub-*.bundle` 仍含旧历史（重写前的救命备份） | 确认一切正常后删除 |
+| 浏览器/搜索引擎缓存 | 第三方索引不会立刻消失 | 只能等抓取过期 |
+
+**必须在网页里手动打开的两个开关**（API 不支持）：
+
+1. GitHub → Settings → Emails → **Keep my email addresses private**
+2. 同一页 → **Block command line pushes that expose my email**
+
+工具：`scripts/scrub-email.sh`（默认只统计，`--apply` 才重写），需要 `git-filter-repo`
+（`curl -fsSL -o ~/tools/git-filter-repo https://raw.githubusercontent.com/newren/git-filter-repo/main/git-filter-repo && chmod +x ~/tools/git-filter-repo`）。
 
 ---
 
