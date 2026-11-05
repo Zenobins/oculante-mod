@@ -357,6 +357,7 @@ git diff master..HEAD > input-remap.patch
 | 分享包 | `dist/Oculante-0.9.6-mod-20261106-0229.zip`（17 MB） |
 | 补丁 | `input-remap.patch`（193 KB，含文档与打包脚本） |
 | 单测 | `cargo test --lib --bin oculante` → 41 + 1 全绿 |
+| 远端 | `origin` = `woelper/oculante`（上游）；`fork` = `Zenobins/oculante-mod`（推送目标，默认分支 `feat/input-remap`） |
 
 再次接手时的顺序：
 

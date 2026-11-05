@@ -4,6 +4,7 @@
 > 分支 `feat/input-remap`（基于 `master` @ `fdc05eb`，14 个附加提交）
 > 交付：`dist/Oculante.app` / `dist/Oculante-0.9.6-mod-20261106-0229.zip`
 > 补丁：`input-remap.patch`（193 KB）；release 二进制 sha256 前缀 `0a2f6efb`
+> 远端：`origin` = 上游 `woelper/oculante`，`fork` = <https://github.com/Zenobins/oculante-mod>（默认分支已切到 `feat/input-remap`）
 
 | 文件 | 用途 | 什么时候看 |
 |---|---|---|
