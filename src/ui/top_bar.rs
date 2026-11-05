@@ -190,8 +190,7 @@ pub fn main_menu(ui: &mut Ui, state: &mut OculanteState, app: &mut App, gfx: &mu
             )
             .clicked()
         {
-            state.always_on_top = !state.always_on_top;
-            app.window().set_always_on_top(state.always_on_top);
+            toggle_always_on_top(app, state);
         }
 
         if state.current_path.is_some() && window_x > ui.cursor().left() + 80. {
@@ -223,18 +222,7 @@ pub fn main_menu(ui: &mut Ui, state: &mut OculanteState, app: &mut App, gfx: &mu
             }
         }
 
-        if state.current_texture.get().is_some()
-            && window_x > ui.cursor().left() + 80.
-            && tooltip(
-                unframed_button(PLACEHOLDER, ui),
-                "Clear image",
-                &lookup(&state.persistent_settings.shortcuts, &ClearImage),
-                ui,
-            )
-            .clicked()
-        {
-            clear_image(state);
-        }
+        // "Clear image" is intentionally gone: only trashing the file is offered.
 
         if state.scrubber.len() > 1 && window_x > ui.cursor().left() {
             // TODO: Check if wrap is off and we are at first image

@@ -713,6 +713,9 @@ fn keybinding_ui(app: &mut App, state: &mut OculanteState, ui: &mut Ui) {
         .persistent_settings
         .shortcuts
         .iter_mut()
+        // ClearImage is disabled: do not offer a key for it. The entry may still
+        // exist in old settings files, which is fine.
+        .filter(|(event, _)| **event != crate::shortcuts::InputEvent::ClearImage)
         .collect::<Vec<_>>();
     ordered_shortcuts.sort_by(|a, b| a.0.partial_cmp(b.0).unwrap_or(std::cmp::Ordering::Equal));
 
