@@ -152,6 +152,9 @@ notan_glsl-to-spirv = ["notan/glsl-to-spirv"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
 fruitbasket = "0.10.0"
+# Runtime method injection: the reopen handler has to be added to the delegate
+# class that winit installs (see src/mac.rs).
+objc = "0.2"
 
 # Single-writer election for the settings files when several instances run.
 [target.'cfg(unix)'.dependencies]

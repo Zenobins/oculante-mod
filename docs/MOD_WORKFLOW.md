@@ -232,6 +232,29 @@ pub fn write_atomic(path: &Path, data: &[u8]) -> Result<()>;
 调用侧：`state.may_persist()` 门控所有 `save_blocking()`；次级窗口在首帧提示只读。
 单测：`settings::tests::only_one_instance_may_persist`、`atomic_write_leaves_no_temp_file`。
 
+### Finder「打开方式」为什么曾经坏掉（上游 #33）
+
+macOS 把"打开文件"作为 Apple Event 发给**正在运行的应用**，由 `NSApplicationDelegate` 的 `application:openFile:` 接收。
+上游 `mac.rs` 的做法是"助手收到一个文件就 spawn 子进程并**退出**"，所以应用运行期间没人接事件 → 系统弹 "cannot open files in the Format"。
+
+现在的结构：
+
+```
+open .app / 双击图片
+   └─ LaunchServices
+        └─ 助手进程（fruitbasket, Accessory, 无窗口, 常驻）
+             ├─ application:openFile: → spawn 窗口进程（带文件路径）
+             ├─ applicationShouldHandleReopen: → spawn 窗口进程（无文件）
+             └─ 轮询子进程，全退出后自己退出
+```
+
+两个必须记住的坑：
+
+1. **不能在 `FruitApp::new()` 之后立刻注入 delegate 方法**：那时 `NSApp.delegate` 还是 nil。要在 `applicationDidFinishLaunching:` 回调里注入。
+2. **`rapp`（reopen）事件到不了 `NSAppleEventManager` 的 handler**：NSApplication 先消费了它，只走 delegate。所以 reopen 只能用 `class_addMethod` 补到 delegate 类上（type encoding `B@:@B`）。
+
+窗口进程（带 `-c` 参数）**不安装**任何 delegate，也不进入助手逻辑。
+
 ### 新增窗口的接线
 
 `InputEvent::NewWindow`（默认 ⌘/Ctrl+N）→ `spawn_new_instance()` → 成功给 toast、失败给错误 toast。

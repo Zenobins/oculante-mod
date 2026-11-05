@@ -204,6 +204,43 @@ M = Mirror(pivot) * R(pivot) * T(offset) * S(scale)
 
 ---
 
+### M12 修复 macOS「打开第二张图报错」与「再次双击 App 不开新窗口」
+
+**现象**（用户验收）：
+1. 已有一个窗口时，在 Finder 里双击第二张图 → 系统弹 “The document … could not be opened. Oculante cannot open files in the "Image" format.”；关掉窗口后再打开则正常。
+2. 不打开图片、只双击 .app，永远只有一个窗口。
+
+**根因**（已核对上游 issue）：这是上游的已知缺陷 `woelper/oculante#33`，维护者原话是“fruitbasket 必须跑在主线程，没法常驻监听 macOS 的打开事件，大概要深入 objc”。具体机制：
+
+- 上游 `mac.rs` 的 chainload：无参启动 → 起一个 fruitbasket 的 NSApplication 收 `openFile:` → 收到文件后 **spawn 子进程并立即退出**。
+- 于是"应用已运行"时，系统把 odoc 事件发给正在运行的子进程（winit），**它根本没有 delegate 处理**，AppKit 就弹出上面那个错误。
+- 同理，双击 .app 触发的是 `rapp`（reopen）事件，NSApplication 会调用 delegate 的 `applicationShouldHandleReopen:hasVisibleWindows:`，fruitbasket 没提供该方法 → 只会激活旧窗口。
+
+**修复**：
+
+| 改动 | 说明 |
+|---|---|
+| 助手常驻 | `mac.rs` 的 fruitbasket 进程不再"收一个文件就退出"，而是作为**无窗口助手**常驻（`ActivationPolicy::Accessory`，不显示 Dock 图标） |
+| 每个事件开一个窗口 | `application:openFile:` → `spawn_window(Some(path))`；冷启动无文件时，延迟 400ms 后开一个空窗口（若期间收到文件则取消） |
+| reopen 注入 | fruitbasket 只注册固定几个 selector，因此用 `objc` 的 `class_addMethod` 往 **delegate 的类**上补 `applicationShouldHandleReopen:hasVisibleWindows:`（编码 `B@:@B`），返回 true 并开新窗口 |
+| 注入时机 | 必须在 **`applicationDidFinishLaunching:` 之后**注入：在此之前 `NSApp.delegate` 还是 nil（这个坑实测踩到，日志 `No application delegate`） |
+| 助手生命周期 | 每 1.5s 轮询自己 spawn 的子进程；全部退出后再等一个周期即 `stopper.stop()`，不留僵尸进程；15s 内没成功开窗也会退出 |
+| 依赖 | macOS 目标新增 `objc = "0.2"`（已在校验锁里，无新下载） |
+
+**实测矩阵**（用 `pgrep -fl` 看命令行区分助手与窗口）：
+
+| 场景 | 结果 |
+|---|---|
+| 冷启动、无文件 | 1 助手 + 1 窗口 |
+| 冷启动、带文件 | 1 助手 + 1 个带文件参数的窗口（**不会**多开空窗口） |
+| 运行中打开另一个文件 | 新增 1 个窗口，无错误弹窗 |
+| 运行中再双击 .app | 新增 1 个窗口（日志 `Reopen requested`） |
+| 关掉所有窗口 | 助手在 ~3s 内退出，无残留进程 |
+
+**安全边界**：`unsafe` 只集中在 `install_reopen_handler`；delegate 为空时只 warn 不崩；`class_addMethod` 返回 false（方法已存在）时直接返回；闭包只捕获 `Arc<Mutex<Vec<Child>>>`，在 AppKit 主线程调用。
+
+---
+
 ### M11 多窗口（多实例）+ 每窗口独立的 Always on top
 
 **需求**：同时开多个窗口看不同的图，且置顶状态按窗口独立（有的置顶、有的不置顶）。

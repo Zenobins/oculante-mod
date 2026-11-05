@@ -5776,6 +5776,7 @@ dependencies = [
  "nalgebra 0.33.3",
  "notan",
  "num-integer",
+ "objc",
  "open",
  "palette",
  "psd",
