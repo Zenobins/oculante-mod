@@ -12,17 +12,17 @@
 |---|---|---|---|
 | T0 | 构建环境 cmake | `cmake --version` | ✅ |
 | T1 | 分支 `feat/input-remap` | `git branch --show-current` | ✅ |
-| T2 | `gestures.rs` 几何内核 + 单测 | `cargo test --lib gestures::` 全绿 | ▶ |
-| T3 | `utils.rs` 统一入口（`zoom_at`/`toggle_always_on_top`/`view_matrix` 助手） | `cargo check --lib` | ▶ |
-| T4 | 绘制层接入矩阵（`draw_textures`/棋盘/边框/瓦片） | 构建后画面可正常显示（未变换时零差异） | ▶ |
-| T5 | 滚轮手势（翻图/缩放/90° 旋转） | 手动 3 项 + `cargo test` | ▶ |
-| T6 | 右键拖拽缩放 + 右键双击置顶 | 手动 2 项 | ▶ |
-| T7 | 左键双击 1:1 ↔ fit | 手动 1 项 | ▶ |
-| T8 | 中键状态机（单击镜像 / 拖动精密旋转） | 手动 3 项 | ▶ |
-| T9 | 几何一致性收尾（AABB/平移逆变换/`cursor_relative`/去 `trunc()`） | 手动 3 项 + 单测 | ▶ |
-| T10 | 禁用 `ClearImage`（4 处） | `grep -rn "ClearImage" src/` 只剩枚举/过滤 | ▶ |
-| T11 | 文档（README/CHANGELOG）+ patch 导出 | `git diff --stat` + patch 文件存在 | ☐ |
-| T12 | `cargo build --release` + 验收清单 | `target/release/oculante` 可运行 | ☐ |
+| T2 | `gestures.rs` 几何内核 + 单测 | `cargo test --lib gestures::` 全绿 | ✅ |
+| T3 | `utils.rs` 统一入口（`zoom_at`/`toggle_always_on_top`/`view_matrix` 助手） | `cargo check --lib` | ✅ |
+| T4 | 绘制层接入矩阵（`draw_textures`/棋盘/边框/瓦片） | 构建后画面可正常显示（未变换时零差异） | ✅ |
+| T5 | 滚轮手势（翻图/缩放/90° 旋转） | 手动 3 项 + `cargo test` | ✅ |
+| T6 | 右键拖拽缩放 + 右键双击置顶 | 手动 2 项 | ✅ |
+| T7 | 左键双击 1:1 ↔ fit | 手动 1 项 | ✅ |
+| T8 | 中键状态机（单击镜像 / 拖动精密旋转） | 手动 3 项 | ✅ |
+| T9 | 几何一致性收尾（AABB/平移逆变换/`cursor_relative`/去 `trunc()`） | 手动 3 项 + 单测 | ✅ |
+| T10 | 禁用 `ClearImage`（4 处） | `grep -rn "ClearImage" src/` 只剩枚举/过滤 | ✅ |
+| T11 | 文档（README/CHANGELOG）+ patch 导出 | `git diff --stat` + patch 文件存在 | ✅ |
+| T12 | `cargo build --release` + 验收清单 | `target/release/oculante` 可运行 | ✅ |
 
 状态图例：☐ 未开始 / ▶ 进行中 / ✅ 完成 / ⚠ 阻塞（必须在下方"阻塞记录"写原因）
 
@@ -152,3 +152,24 @@ cargo build --release
 | 版本 | 内容 |
 |---|---|
 | v1 | 建立排程，拆 T0–T12，确定"先测后用"顺序（T2 先于所有接线） |
+| v2 | 全部任务完成：16 个单测通过，release 二进制约 30MB，patch 已导出；T5–T9 的手动验收留给用户 |
+
+---
+
+## 4. 交付物
+
+| 项 | 路径 |
+|---|---|
+| release 二进制 | `oculante/target/release/oculante`（约 30 MB） |
+| 补丁 | `oculante/input-remap.patch`（99 KB，含文档） |
+| 分支 | `feat/input-remap`（4 个提交，基于 `master` @ fdc05eb） |
+| 方案规格 | `oculante/docs/INPUT_REMAP_PLAN.md` |
+| 本排程 | `oculante/docs/IMPLEMENTATION_SCHEDULE.md` |
+| 便携 cmake | `应用mod/tools/cmake-3.31.6-macos-universal/`（240 MB，可整目录删除） |
+
+本地运行：
+
+```bash
+cd /Users/raymond/WorkBuddy/应用mod/oculante
+./target/release/oculante tests/moss.jpg
+```
