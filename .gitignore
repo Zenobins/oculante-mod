@@ -19,3 +19,7 @@ icon.ico
 input-remap.patch
 target/
 dist/
+
+# The app bundle template must be versioned even though upstream ignores
+# generated plists.
+!packaging/macos/Info.plist

@@ -1,3 +1,41 @@
+> ## 本仓库是 oculante 的个人修改版（mod）
+>
+> | | |
+> |---|---|
+> | 上游 | <https://github.com/woelper/oculante>（基线 `master` @ `fdc05eb`，v0.9.6） |
+> | 本仓库 | **oculante-mod** — 分支 `feat/input-remap` |
+> | 差异一览 | <https://github.com/Zenobins/oculante-mod/compare/master...feat/input-remap> |
+> | 完整变更日志 | [`docs/MOD_CHANGELOG.md`](docs/MOD_CHANGELOG.md)（逐条"上游原实现 → 本地实现"，附上游升级流程） |
+> | 输入映射总表 | 见下方 [Mouse & keyboard (local fork)](#mouse--keyboard-local-fork) |
+>
+> **改了什么**：只动输入映射 + 禁用 `ClearImage` + 支持多窗口，没有改解码 / 编辑 / 文件写入逻辑；旋转与镜像都是**仅显示**，不写盘。
+>
+> - 滚轮 = 上一张/下一张；Ctrl(⌘)+滚轮 = 缩放（两者与上游对调）
+> - 右键拖拽 = 缩放；右键双击 = Always on top；左键双击 = 1:1 ↔ 自适应（全屏改回只有 `F`）
+> - 中键单击 = 水平镜像；中键拖拽 = 精密旋转；Shift+滚轮 = 90° 步进旋转（均为仅显示）
+> - `Shift+Delete`（ClearImage）已禁用，只保留进废纸篓的 `Delete`
+> - 多窗口（每窗口独立置顶）、运行中打开第二张图不再报错、再次双击 App 开新窗口
+> - 附 macOS `.app` 打包脚本
+>
+> **相对上游新增的文件**
+>
+> | 文件 | 作用 |
+> |---|---|
+> | `src/gestures.rs` | 手势与视图变换的纯逻辑（含 30 个单测，无 GUI 依赖） |
+> | `docs/MOD_CHANGELOG.md` | 全部改动、上游对照、升级 checklist |
+> | `docs/MOD_WORKFLOW.md` | 方法论、工具链、几何模型、踩过的坑 |
+> | `docs/INPUT_REMAP_PLAN.md` | 需求规格、几何不变量、风险清单 |
+> | `docs/IMPLEMENTATION_SCHEDULE.md` | 执行台账、硬门禁、验收记录 |
+> | `docs/README.md` | 文档索引 |
+> | `packaging/macos/Info.plist` | `.app` 的 plist 模板 |
+> | `scripts/make_macos_app.sh` | 一键构建 `Oculante.app` |
+>
+> **修改的上游文件（14 个）**：`src/main.rs`、`src/mac.rs`（重写）、`src/appstate.rs`、`src/utils.rs`、`src/texture_wrapper.rs`、`src/shortcuts.rs`、`src/settings.rs`、`src/lib.rs`、`src/ui/top_bar.rs`、`src/ui/settings_ui.rs`、`Cargo.toml`、`Cargo.lock`、`README.md`、`CHANGELOG.md`、`.gitignore`
+>
+> 上游正文（原样保留）如下。
+
+---
+
 ### Oculante is currently in maintenance mode. We will only be accepting bug fixes and minor improvements to existing features until we complete our rewrite. More details can be seen [here](https://github.com/woelper/oculante/issues/#746). Progress can be seen on the oculante-next branch.
 
 <h1 align="center">
